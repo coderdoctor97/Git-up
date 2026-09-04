@@ -36,11 +36,24 @@ const icons = {
   trash: '<path d="M4 7h16M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2M6.5 7l1 12a1 1 0 0 0 1 .9h7a1 1 0 0 0 1-.9l1-12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v5M14 11v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
   chevron: '<path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
   chat: '<path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H9l-5 4V6.5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  route: '<circle cx="6" cy="19" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="18" cy="5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8.4 19H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+  flag: '<path d="M5 21V4m0 1h12l-2.5 3.5L17 12H5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
 };
 function icon(name, size = 17, className = '') { return `<svg class="${className}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" aria-hidden="true">${icons[name] || icons.info}</svg>`; }
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 }
+/** Strip key-like secrets from anything rendered back to the page (banners, insights, recovery notes). */
+function redactSecrets(value) {
+  return String(value ?? '')
+    .replace(/sk-[A-Za-z0-9-_]{8,}/g, '[redacted-key]')
+    .replace(/gh[pousr]_[A-Za-z0-9]{8,}/g, '[redacted-token]')
+    .replace(/AKIA[0-9A-Z]{12,}/g, '[redacted-key]')
+    .replace(/xox[bpas]-[A-Za-z0-9-]{6,}/g, '[redacted-token]')
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, '[redacted-private-key]')
+    .replace(/Bearer\s+[A-Za-z0-9\-._~+/=]{12,}/g, 'Bearer [redacted]');
+}
+function safe(value) { return esc(redactSecrets(value)); }
 function formatDate(value) {
   try { return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value)); } catch { return 'Just now'; }
 }
@@ -69,6 +82,7 @@ const state = {
   checked: {},
   explanationIndex: 0,
   modal: null,
+  lastFocusId: '',
   error: '',
   toast: null,
   settings: { baseUrl: savedSettings.baseUrl || 'https://api.openai.com/v1', endpoint: savedSettings.endpoint || '/chat/completions', model: savedSettings.model || '', apiKey: sessionStorage.getItem('git-up-api-key') || '' },
@@ -80,6 +94,8 @@ const state = {
   insightLoading: null,
   insightError: '',
   insightCache: {},
+  insightQuestion: '',
+  insightBase: 'recommendations',
   // v2 features: living path, graph, contract, reader mode
   expertise: 'some',
   pathSelections: {},
@@ -109,13 +125,25 @@ function showToast(message, type = 'success') {
   showToast.timer = window.setTimeout(() => { state.toast = null; render(); }, 3300);
 }
 
+/** Classify a failed analysis into a titled, actionable state instead of one generic banner. */
+function errorKindOf(message) {
+  const text = String(message || '');
+  if (/rate limit/i.test(text)) return { title: 'GitHub rate limit reached', hint: 'Add a server GitHub token, or wait an hour. File-name evidence is still usable.' };
+  if (/private|not found/i.test(text)) return { title: 'Repository not found or private', hint: 'Git-Up scans public repositories. Check the owner and name, or make the repo public first.' };
+  if (/AI provider|model|endpoint|base URL|key/i.test(text)) return { title: 'AI provider hiccup', hint: 'The heuristic guide still works with no key. Check the provider settings and retry.' };
+  if (/URL|github\.com|owner/i.test(text)) return { title: 'Check the repository URL', hint: 'HTTPS, SSH, and git@ forms all work, for example https://github.com/owner/repo.' };
+  if (/network|fetch|failed/i.test(text)) return { title: 'Network problem', hint: 'Check your connection and try again. Recent analyses are kept in history.' };
+  return { title: 'Analysis failed', hint: 'Check the URL and try again. Nothing was saved for this attempt.' };
+}
+
 function topbar() {
   const aiReady = hasAiConfig();
   return `<header class="topbar">
     <a class="brand" href="#" data-action="new-analysis" aria-label="Git-Up home">
       <span class="brand-mark">${icon('mark', 19)}</span><span class="brand-word">git-<em>up</em></span>
+      <span class="brand-sub">living install paths</span>
     </a>
-    <div class="topbar-center"><span>Workspace</span><span class="slash">/</span><strong>${state.mode === 'analysis' ? esc(displayName({ label: '', name: shortName(state.guide) })) : 'New analysis'}</strong></div>
+    <div class="topbar-center"><span>Route</span><span class="slash">/</span><strong>${state.mode === 'analysis' ? esc(displayName({ label: '', name: shortName(state.guide) })) : 'New analysis'}</strong></div>
     <div class="topbar-actions">
       <div class="connection-pill"><i class="status-dot ${aiReady ? 'online' : ''}"></i><span>${aiReady ? 'AI connected' : 'Local scan ready'}</span></div>
       <button class="icon-button" data-action="settings" aria-label="Open AI settings" title="AI settings">${icon('settings', 18)}</button>
@@ -140,7 +168,6 @@ function buildTree(paths) {
     for (let i = 0; i < parts.length; i += 1) {
       const part = parts[i];
       const isLast = i === parts.length - 1;
-      const isFile = isLast && (part.includes('.') || parts.length === 1 || !/^[A-Z_.-]+$/.test(part) || true);
       // Heuristic: treat last segment as file unless path clearly continues elsewhere.
       if (isLast) {
         const looksLikeDir = paths.some((p) => p !== full && p.startsWith(`${full}/`));
@@ -190,7 +217,7 @@ function fileTreePanel() {
   const paths = treePaths();
   const tree = buildTree(paths);
   const topCounts = Object.keys(tree.dirs).length + tree.files.length;
-  return `<div class="side-section">
+  return `<div class="side-section" id="route-files">
     <div class="side-section-head"><p class="sidebar-label">Files</p><span class="side-count">${paths.length}</span></div>
     <input class="tree-filter" id="tree-filter" placeholder="Filter files…" value="${esc(state.treeFilter)}" aria-label="Filter file tree" />
     <div class="file-tree" role="tree" aria-label="Repository file tree">${treeNodeHtml(tree)}</div>
@@ -207,8 +234,8 @@ function sidebar() {
       return `<div class="history-entry renaming ${isActive ? 'active' : ''}">
         <span class="history-icon">${icon('clock', 14)}</span>
         <input class="rename-input" id="rename-input" value="${esc(state.renameDraft)}" maxlength="60" aria-label="Rename repository label" />
-        <button class="mini-btn save" data-action="history-rename-save" data-id="${esc(entry.id)}" title="Save label">${icon('check', 12)}</button>
-        <button class="mini-btn" data-action="history-rename-cancel" title="Cancel">${icon('close', 12)}</button>
+        <button class="mini-btn save" data-action="history-rename-save" data-id="${esc(entry.id)}" title="Save label" aria-label="Save label">${icon('check', 12)}</button>
+        <button class="mini-btn" data-action="history-rename-cancel" title="Cancel" aria-label="Cancel rename">${icon('close', 12)}</button>
       </div>`;
     }
     return `<div class="history-row ${isActive ? 'active' : ''}">
@@ -222,49 +249,58 @@ function sidebar() {
       </div>
     </div>`;
   }).join('') : '<div class="history-empty">Your analyzed repositories will appear here. Hover any entry for rename / remove.</div>';
-  return `<aside class="sidebar">
+  return `<aside class="sidebar" aria-label="Workspace">
     <button class="new-analysis" data-action="new-analysis">${icon('plus', 16)}<span>New analysis</span></button>
     <p class="sidebar-label">Workspace</p>
     <nav class="sidebar-nav" aria-label="Workspace navigation">
       <button class="nav-item active" data-action="new-analysis"><span class="nav-icon">${icon('grid', 16)}</span><span>Analyses</span><span class="nav-count">${state.history.length || '—'}</span></button>
       <button class="nav-item" data-action="settings"><span class="nav-icon">${icon('settings', 16)}</span><span>AI provider</span></button>
     </nav>
-    <div class="history"><p class="sidebar-label">Recent</p><div class="history-list">${historyHtml}</div></div>
+    <div class="history" id="route-history"><p class="sidebar-label">Recent</p><div class="history-list">${historyHtml}</div></div>
     ${fileTreePanel()}
     <div class="sidebar-foot"><div class="local-note"><strong>Private by default</strong>Your API key stays in this browser session. Repository files are only sent to your configured AI provider.</div></div>
   </aside>`;
 }
 
 function repoForm() {
+  const kind = state.error ? errorKindOf(state.error) : null;
   return `<form class="repo-form" id="repo-form">
     <div class="repo-input-wrap">${icon('github', 17)}<input id="repo-input" class="repo-input" autocomplete="url" spellcheck="false" value="${esc(state.repoUrl)}" placeholder="https://github.com/owner/repository" aria-label="GitHub repository URL" required /></div>
-    <button class="analyze-button ${state.mode === 'loading' ? 'loading' : ''}" type="submit" ${state.mode === 'loading' ? 'disabled' : ''}>${state.mode === 'loading' ? `${icon('refresh', 15, 'spinner')}Scanning repository` : `${icon('spark', 15)}Analyze repository`}</button>
+    <button class="analyze-button ${state.mode === 'loading' ? 'loading' : ''}" type="submit" ${state.mode === 'loading' ? 'disabled' : ''}>${state.mode === 'loading' ? `${icon('refresh', 15, 'spinner')}Scanning repository` : `${icon('route', 15)}Analyze repository`}</button>
   </form>
   ${expertisePicker()}
-  <div class="form-meta"><span>${icon('github', 12)} Public repositories</span><span>${icon('key', 12)} SSH, HTTPS, and Git URLs</span><span class="shortcut">⌘ ↵</span></div>
-  ${state.error ? `<div class="error-banner" role="alert">${icon('warning', 17)}<span>${esc(state.error)}</span></div>` : ''}`;
+  <div class="form-meta"><span>${icon('github', 12)} Public repositories</span><span>${icon('key', 12)} SSH, HTTPS, and Git URLs</span><span>${icon('shield', 12)} Heuristic scan works with no AI key</span><span class="shortcut">⌘ ↵</span></div>
+  ${state.error ? `<div class="error-banner" role="alert">${icon('warning', 17)}<span><strong>${esc(kind.title)}.</strong> ${safe(state.error)}<br /><em>${esc(kind.hint)}</em></span></div>` : ''}`;
 }
 
 function emptyView() {
   return `<section class="hero">
     <div class="eyebrow"><span class="eyebrow-line"></span>Repository → ready-to-run</div>
     <h1>Make any repo<br /><span>runnable, without the archaeology.</span></h1>
-    <p class="hero-copy">Git-Up reads the setup surface of a GitHub repository, finds what it needs, and turns scattered instructions into one calm, trackable installation plan.</p>
+    <p class="hero-copy">Git-Up builds a living install path from repository evidence, and helps you recover when a step fails. Paste a public GitHub URL to begin.</p>
     ${repoForm()}
   </section>
   <section class="initial-content" aria-labelledby="how-it-works">
     <div class="section-kicker" id="how-it-works">How Git-Up works</div>
-    <div class="how-grid">
-      <article class="how-card"><span class="how-number">01 / SCAN</span><h3>Read the setup surface</h3><p>Manifests, lockfiles, Docker configs, README instructions, and environment hints.</p></article>
-      <article class="how-card"><span class="how-number">02 / ORGANIZE</span><h3>Separate signal from noise</h3><p>Dependencies and requirements become distinct, while every command gets a clear purpose.</p></article>
-      <article class="how-card"><span class="how-number">03 / SHIP</span><h3>Follow a clean path</h3><p>Check off each action, understand why it matters, and copy a ready-to-run script.</p></article>
-    </div>
+    <ol class="route-preview">
+      <li class="route-stop"><span class="route-mile">01</span><div><h3>Read the setup surface</h3><p>Manifests, lockfiles, Docker configs, README instructions, and environment hints.</p></div></li>
+      <li class="route-stop"><span class="route-mile">02</span><div><h3>Walk one living route</h3><p>Failure evidence first, then a checklist that keeps your ticks, branch choices, and corrections.</p></div></li>
+      <li class="route-stop"><span class="route-mile">03</span><div><h3>Recover, don’t restart</h3><p>Paste the terminal output and the path rebuilds from the fault forward. Completed work stays done.</p></div></li>
+    </ol>
     <div class="example-row"><span>Try a public repo</span><button class="example-chip" data-example="https://github.com/expressjs/express">${icon('github', 12)} expressjs/express</button><button class="example-chip" data-example="https://github.com/tiangolo/fastapi">${icon('github', 12)} tiangolo/fastapi</button><button class="example-chip" data-example="git@github.com:golang/go.git">${icon('github', 12)} golang/go <small>SSH</small></button></div>
   </section>`;
 }
 
 function loadingView() {
-  return `<section class="loading-view"><div class="loading-top"><div class="loading-orb">${icon('spark', 18)}</div><div><h2>Reading the repository surface</h2><p>Looking for manifests, lockfiles, environment templates, and the shortest path to running it.</p></div></div><div class="skeleton-grid"><div class="skeleton-panel"><div class="skeleton-line short"></div><div class="skeleton-line wide"></div><div class="skeleton-line mid"></div><div class="skeleton-line"></div><div class="skeleton-line mid"></div><div class="skeleton-line"></div></div><div class="skeleton-panel"><div class="skeleton-line short"></div><div class="skeleton-line wide"></div><div class="skeleton-line"></div><div class="skeleton-line mid"></div><div class="skeleton-line"></div></div></div></section>`;
+  return `<section class="loading-view" aria-live="polite" aria-busy="true"><div class="loading-top"><div class="loading-orb">${icon('route', 18)}</div><div><h2>Reading the repository surface</h2><p>Following the real pipeline in order. No percentages are shown because none are measured.</p></div></div>
+  <ol class="scan-phases">
+    <li>Repository read<span>metadata, branches, tree</span></li>
+    <li>Setup-file scan<span>manifests, lockfiles, env templates</span></li>
+    <li>Failure evidence<span>issues, PRs, inferred risks</span></li>
+    <li>Path composition<span>branches recomposed locally</span></li>
+    <li>Contract assembly<span>versions, permissions, verification</span></li>
+  </ol>
+  <div class="skeleton-grid" aria-hidden="true"><div class="skeleton-panel"><div class="skeleton-line short"></div><div class="skeleton-line wide"></div><div class="skeleton-line mid"></div><div class="skeleton-line"></div><div class="skeleton-line mid"></div><div class="skeleton-line"></div></div><div class="skeleton-panel"><div class="skeleton-line short"></div><div class="skeleton-line wide"></div><div class="skeleton-line"></div><div class="skeleton-line mid"></div><div class="skeleton-line"></div></div></div></section>`;
 }
 
 function dependencyList(items) {
@@ -356,21 +392,47 @@ function explorerSection() {
   if (loading) {
     result = `<div class="insight-panel loading" aria-live="polite"><div class="insight-loading">${icon('refresh', 16, 'spinner')}<div><strong>Reading the project closely…</strong><p>Checking files, steps, and notes for a grounded answer.</p></div></div></div>`;
   } else if (state.insightError && !state.insight) {
-    result = `<div class="insight-panel error" role="alert">${icon('warning', 16)}<div><strong>Could not load that idea.</strong><p>${esc(state.insightError)}</p></div></div>`;
+    result = `<div class="insight-panel error" role="alert">${icon('warning', 16)}<div><strong>Could not load that idea.</strong><p>${safe(state.insightError)}</p></div></div>`;
   } else if (state.insight) {
     const insight = state.insight;
     result = `<article class="insight-panel" aria-live="polite">
       <div class="insight-head"><div class="insight-title-wrap"><span class="insight-ic">${icon(insight.mode === 'features' ? 'bulb' : insight.mode === 'bugs' ? 'shield' : 'compass', 15)}</span><div><h4>${esc(insight.title || 'Explorer result')}</h4><span class="tag ${insight.source === 'ai' ? 'ai' : 'scan'}"><i class="tag-dot"></i>${insightSourceLabel(insight.source)}</span></div></div><button class="icon-button" data-action="insight-close" aria-label="Close explorer result">${icon('close', 15)}</button></div>
-      ${insight.intro ? `<p class="insight-intro">${esc(insight.intro)}</p>` : ''}
-      ${(insight.bullets || []).length ? `<ul class="insight-list">${insight.bullets.map((b) => `<li>${esc(b)}</li>`).join('')}</ul>` : ''}
-      ${insight.outro ? `<div class="insight-outro">${icon('check', 13)}<span>${esc(insight.outro)}</span></div>` : ''}
+      ${insight.intro ? `<p class="insight-intro">${safe(insight.intro)}</p>` : ''}
+      ${(insight.bullets || []).length ? `<ul class="insight-list">${insight.bullets.map((b) => `<li>${safe(b)}</li>`).join('')}</ul>` : ''}
+      ${insight.outro ? `<div class="insight-outro">${icon('check', 13)}<span>${safe(insight.outro)}</span></div>` : ''}
       ${followUpChips(insight.followUps, insight.mode === 'custom' ? 'recommendations' : insight.mode)}
     </article>`;
   }
   const guideFollowUps = state.guide?.followUps || [];
   return `<section class="panel explorer-panel" aria-labelledby="explorer-title">
-    <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('spark', 15)}</div><div><h3 id="explorer-title">Curious Explorer</h3><p class="panel-subtitle">One click, three specialist lenses — works instantly, deeper with AI connected</p></div></div></div>
-    <div class="explorer-body"><div class="explorer-grid">${buttons}</div>${result}${!state.insight && !loading ? followUpChips(guideFollowUps, 'recommendations') : ''}</div>
+    <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('spark', 15)}</div><div><h3 id="explorer-title">Curious Explorer</h3><p class="panel-subtitle">One click, three specialist lenses — works instantly, deeper with AI connected. Never part of the install path.</p></div></div></div>
+    <div class="explorer-body"><div class="explorer-grid">${buttons}</div>
+    <form class="insight-custom" id="insight-custom"><label for="insight-question">Ask your own question about this repository</label><div class="insight-custom-row"><input class="text-field" id="insight-question" value="${esc(state.insightQuestion)}" placeholder="For example: does this need a database?" maxlength="300" autocomplete="off" /><select class="select-field" id="insight-base" aria-label="Answer lens"><option value="recommendations" ${state.insightBase === 'recommendations' ? 'selected' : ''}>Recommendations lens</option><option value="features" ${state.insightBase === 'features' ? 'selected' : ''}>Features lens</option><option value="bugs" ${state.insightBase === 'bugs' ? 'selected' : ''}>Bugs lens</option></select><button class="secondary-button" type="submit" ${loading ? 'disabled' : ''}>Ask</button></div></form>
+    ${result}${!state.insight && !loading ? followUpChips(guideFollowUps, 'recommendations') : ''}</div>
+  </section>`;
+}
+
+function routeNav() {
+  return `<nav class="route-nav" aria-label="Result sections">
+    <a href="#route-path">${icon('route', 12)} Path</a>
+    <a href="#route-failures">${icon('warning', 12)} Failures</a>
+    <a href="#route-graph">${icon('grid', 12)} Graph</a>
+    <a href="#route-contract">${icon('shield', 12)} Contract</a>
+    <a href="#route-evidence">${icon('book', 12)} Evidence</a>
+  </nav>`;
+}
+
+function routeStatusStrip() {
+  const steps = activePath();
+  const { done, total, percent } = progressOf(steps, state.checked);
+  const firstOpen = steps.find((entry) => !state.checked[keyOf(entry)]);
+  const verdict = state.guide?.verdict;
+  return `<section class="route-status" aria-label="Where you are on the route">
+    <div class="route-status-main">
+      <span class="route-kicker">${icon('flag', 13)} ${done === total && total ? 'Route complete' : firstOpen ? `Next: step ${String(firstOpen.position || steps.indexOf(firstOpen) + 1).padStart(2, '0')} — ${esc(firstOpen.title)}` : 'Your living route'}</span>
+      ${verdict ? `<p class="route-verdict">${esc(verdict)}</p>` : `<p class="route-verdict dim">Health, failure evidence, and the contract sit below the path they describe.</p>`}
+    </div>
+    <div class="route-status-meter"><div class="progress-copy"><span>${done}/${total} steps confirmed</span><strong>${percent}%</strong></div><div class="progress-track" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100" aria-label="Installation progress"><div class="progress-fill" style="width:${percent}%"></div></div></div>
   </section>`;
 }
 
@@ -378,11 +440,9 @@ function analysisView() {
   const guide = state.guide;
   const repo = guide.repository || {};
   const steps = activePath();
-  const doneCount = steps.filter((step) => state.checked[step.id]).length;
   const { step, explanation } = explanationFor();
-  const percent = steps.length ? Math.round((doneCount / steps.length) * 100) : 0;
   const files = (guide.files || []).slice(0, 14);
-  return `<section class="analysis-view">
+  return `<section class="analysis-view" aria-label="Analysis result">
     <div class="analysis-head">
       <div class="repo-identity">
         <div class="repo-avatar">${icon('github', 22)}</div>
@@ -393,21 +453,24 @@ function analysisView() {
           <div class="analysis-meta"><span class="tag ${guide.source === 'ai' ? 'ai' : 'scan'}"><i class="tag-dot"></i>${sourceLabel()}</span><span class="tag">${esc(guide.confidence || 'medium')} confidence</span><span class="tag">${formatDate(guide.analyzedAt)}</span></div>
         </div>
       </div>
-      <div class="analysis-actions">${expertiseSwitch()}<button class="secondary-button" data-action="new-analysis">${icon('plus', 14)} New</button><button class="install-button" data-action="install">${icon('terminal', 14)} Install</button></div>
+      <div class="analysis-actions">${expertiseSwitch()}<button class="secondary-button" data-action="new-analysis">${icon('plus', 14)} New</button><button class="install-button" data-action="install">${icon('terminal', 14)} Generate install script</button></div>
     </div>
+    ${routeNav()}
     ${resumeBanner()}
+    ${recoveryReport()}
+    ${routeStatusStrip()}
     ${healthPanel()}
     ${pathGraphPanel()}
+    ${installStepsPanel()}
     ${failureFirstPanel()}
-    ${plainOverviewPanel()}
+    ${contractPanel()}
+    ${revisionTrail()}
     <div class="overview-strip"><div class="overview-cell"><div class="cell-label">Analysis summary</div><div class="cell-value overview-summary">${esc(guide.summary || 'A structured installation path for this repository.')}</div></div><div class="overview-cell"><div class="cell-label">Default branch</div><div class="cell-value mono">${esc(repo.defaultBranch || 'main')}</div></div><div class="overview-cell"><div class="cell-label">Language</div><div class="cell-value">${esc(repo.language || 'Not detected')}</div></div><div class="overview-cell"><div class="cell-label">Files inspected</div><div class="cell-value mono">${(guide.files || []).length}</div></div></div>
+    ${plainOverviewPanel()}
     ${explorerSection()}
-    <div class="dashboard-grid">
+    <div class="dashboard-grid" id="route-evidence">
       <div class="primary-stack">
         <div class="info-grid"><section class="panel info-panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('layers', 15)}</div><div><h3>Dependencies</h3><p class="panel-subtitle">Installed as part of this repository</p></div></div><span class="panel-count">${guide.dependencies?.length || 0}</span></div><div class="info-list">${dependencyList(guide.dependencies)}</div></section><section class="panel info-panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('key', 15)}</div><div><h3>Requirements</h3><p class="panel-subtitle">Needed before the app can work</p></div></div><span class="panel-count">${guide.requirements?.length || 0}</span></div><div class="info-list">${requirementsList(guide.requirements)}</div></section></div>
-        ${installStepsPanel()}
-        ${revisionTrail()}
-        ${contractPanel()}
         ${guide.notes?.length ? `<section class="panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('book', 15)}</div><div><h3>Notes from the scan</h3><p class="panel-subtitle">Keep these caveats close while you set up</p></div></div></div><div class="info-list">${guide.notes.map((note) => `<div class="info-item"><span class="info-bullet"></span><span>${esc(note)}</span></div>`).join('')}</div></section>` : ''}
       </div>
       <div class="sticky-column"><section class="panel explanation-panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('info', 15)}</div><div><h3>Explanation</h3><p class="panel-subtitle">Understand the why, without cluttering the checklist</p></div></div></div><div class="explanation-content"><label class="explanation-step-label" for="explanation-select">Selected step</label><select class="explanation-select" id="explanation-select">${steps.map((item, index) => `<option value="${index}" ${index === state.explanationIndex ? 'selected' : ''}>${String(index + 1).padStart(2, '0')} · ${esc(item.title)}</option>`).join('')}</select><h4>${esc(explanation.title || step?.title || 'Installation step')}</h4><p>${esc(explanation.body || step?.detail || '')}</p>${guide.environment?.length ? `<div class="explanation-tip">${icon('key', 14)}<span>Environment detected: <strong>${guide.environment.map(esc).join(', ')}</strong>. Keep secrets out of Git.</span></div>` : `<div class="explanation-tip">${icon('info', 14)}<span>Commands are shown for your terminal. Git-Up never executes code on your machine.</span></div>`}</div></section>${files.length ? `<section class="panel files-panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('book', 15)}</div><div><h3>Inspected files</h3><p class="panel-subtitle">The setup evidence behind this guide</p></div></div></div><div class="file-list">${files.map((file) => `<span class="file-chip" title="${esc(file)}">${esc(file)}</span>`).join('')}</div></section>` : ''}</div>
@@ -417,10 +480,10 @@ function analysisView() {
 
 function settingsModal() {
   const models = [...new Set([...(state.modelOptions || []), state.settings.model].filter(Boolean))];
-  return `<div class="modal-layer" data-action="close-on-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div class="modal-head"><div><h2 id="settings-title">AI provider</h2><p>Connect an OpenAI-compatible endpoint for a deeper repository review. Keys remain in this browser session.</p></div><button class="icon-button" data-action="close-modal" aria-label="Close settings">${icon('close', 18)}</button></div><form class="modal-body" id="settings-form"><div class="inline-fields"><div class="form-field"><label for="base-url">Base URL <span>required</span></label><input class="text-field" id="base-url" value="${esc(state.settings.baseUrl)}" placeholder="https://api.openai.com/v1" /></div><div class="form-field"><label for="endpoint">Chat endpoint <span>required</span></label><input class="text-field" id="endpoint" value="${esc(state.settings.endpoint)}" placeholder="/chat/completions" /></div></div><div class="form-field"><label for="api-key">API key <span>session only</span></label><div class="secret-field"><input class="text-field" id="api-key" type="${state.secretVisible ? 'text' : 'password'}" value="${esc(state.settings.apiKey)}" placeholder="sk-…" autocomplete="off" /> <button class="reveal-key" type="button" data-action="toggle-key" aria-label="${state.secretVisible ? 'Hide' : 'Show'} API key">${icon(state.secretVisible ? 'eyeOff' : 'eye', 15)}</button></div><p class="field-hint">Used only for requests from this session. It is never saved to the server or included in a repository guide.</p></div><div class="form-field"><label for="model">Model <span>${models.length ? `${models.length} available` : 'fetch from provider'}</span></label><div class="model-row"><select class="select-field" id="model"><option value="">Select a model…</option>${models.map((model) => `<option value="${esc(model)}" ${model === state.settings.model ? 'selected' : ''}>${esc(model)}</option>`).join('')}</select><button type="button" class="fetch-button" data-action="fetch-models">${icon('refresh', 13)} Fetch models</button></div><p class="field-hint">Git-Up requests <span class="mono">GET /models</span> from your base URL. Your provider may use a different models endpoint.</p></div><div id="settings-status" class="settings-status"></div><div class="modal-foot"><button type="button" class="secondary-button" data-action="close-modal">Cancel</button><button class="install-button" type="submit">${icon('check', 14)} Save configuration</button></div></form></section></div>`;
+  return `<div class="modal-layer" data-action="close-on-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div class="modal-head"><div><h2 id="settings-title">AI provider</h2><p>Connect an OpenAI-compatible endpoint for a deeper repository review. AI is optional: the heuristic scan stays fully usable without it. Keys remain in this browser session.</p></div><button class="icon-button" data-action="close-modal" aria-label="Close settings">${icon('close', 18)}</button></div><form class="modal-body" id="settings-form"><div class="inline-fields"><div class="form-field"><label for="base-url">Base URL <span>required</span></label><input class="text-field" id="base-url" value="${esc(state.settings.baseUrl)}" placeholder="https://api.openai.com/v1" /></div><div class="form-field"><label for="endpoint">Chat endpoint <span>required</span></label><input class="text-field" id="endpoint" value="${esc(state.settings.endpoint)}" placeholder="/chat/completions" /></div></div><div class="form-field"><label for="api-key">API key <span>session only</span></label><div class="secret-field"><input class="text-field" id="api-key" type="${state.secretVisible ? 'text' : 'password'}" value="${esc(state.settings.apiKey)}" placeholder="sk-…" autocomplete="off" /> <button class="reveal-key" type="button" data-action="toggle-key" aria-label="${state.secretVisible ? 'Hide' : 'Show'} API key">${icon(state.secretVisible ? 'eyeOff' : 'eye', 15)}</button></div><p class="field-hint">Used only for requests from this session. It is never saved to the server or included in a repository guide.</p></div><div class="form-field"><label for="model">Model <span>${models.length ? `${models.length} available` : 'fetch from provider'}</span></label><div class="model-row"><select class="select-field" id="model"><option value="">Select a model…</option>${models.map((model) => `<option value="${esc(model)}" ${model === state.settings.model ? 'selected' : ''}>${esc(model)}</option>`).join('')}</select><button type="button" class="fetch-button" data-action="fetch-models">${icon('refresh', 13)} Fetch models</button></div><p class="field-hint">Git-Up requests <span class="mono">GET /models</span> from your base URL. Your provider may use a different models endpoint.</p></div><div id="settings-status" class="settings-status" aria-live="polite"></div><div class="modal-foot"><button type="button" class="secondary-button" data-action="close-modal">Cancel</button><button class="install-button" type="submit">${icon('check', 14)} Save configuration</button></div></form></section></div>`;
 }
 function installModal() {
-  return `<div class="modal-layer" data-action="close-on-backdrop"><section class="modal script-modal" role="dialog" aria-modal="true" aria-labelledby="install-title"><div class="modal-head"><div><h2 id="install-title">Your install script</h2><p>Review these commands, then run them in your own terminal. Nothing runs automatically.</p></div><button class="icon-button" data-action="close-modal" aria-label="Close install script">${icon('close', 18)}</button></div><div class="modal-body"><p class="script-copy-note">This is the same order as your checklist. If the repository requires secrets, fill those in locally before running the script.</p><div class="script-block"><button class="copy-mini script-copy" data-copy="${esc(installScript())}" aria-label="Copy install script" title="Copy install script">${icon('copy', 13)}</button>${esc(installScript())}</div><div class="modal-foot"><button class="secondary-button" data-action="close-modal">Close</button><button class="install-button" data-copy="${esc(installScript())}">${icon('copy', 14)} Copy script</button></div></div></section></div>`;
+  return `<div class="modal-layer" data-action="close-on-backdrop"><section class="modal script-modal" role="dialog" aria-modal="true" aria-labelledby="install-title"><div class="modal-head"><div><h2 id="install-title">Your install script</h2><p>Review these commands, then run them in your own terminal. Nothing runs automatically.</p></div><button class="icon-button" data-action="close-modal" aria-label="Close install script">${icon('close', 18)}</button></div><div class="modal-body" aria-live="polite"><p class="script-copy-note">This is the same order as your checklist. If the repository requires secrets, fill those in locally before running the script.</p><div class="script-block"><button class="copy-mini script-copy" data-copy="${esc(installScript())}" aria-label="Copy install script" title="Copy install script">${icon('copy', 13)}<span>Copy</span></button>${esc(installScript())}</div><div class="modal-foot"><button class="secondary-button" data-action="close-modal">Close</button><button class="install-button" data-copy="${esc(installScript())}">${icon('copy', 14)} Copy script</button></div></div></section></div>`;
 }
 function resumeBanner() {
   if (!state.resumeNote) return '';
@@ -552,7 +615,7 @@ function healthPanel() {
   if (!health) return '';
   const factors = health.factors || [];
   const bars = factors.map((factor) => `<div class="factor" title="${esc(factor.detail)}">
-      <div class="factor-top"><span>${esc(factor.label)}</span><b>${factor.score}</b></div>
+      <div class="factor-top"><span>${esc(factor.label)}</span><b>${factor.score} · weight ${Math.round((factor.weight || 0) * 100)}%</b></div>
       <div class="factor-track"><i style="width:${Math.max(3, factor.score)}%" class="tone-${bandTone(factor.score)}"></i></div>
       <p>${esc(factor.detail)}</p>
     </div>`).join('');
@@ -591,12 +654,12 @@ function failureFirstPanel() {
         <p>${esc(pattern.why)}</p>
         <div class="fail-scale">${pattern.origin === 'reported' ? `<div class="scale-track"><i style="width:${Math.round(((pattern.count || 0) / maxHits) * 100)}%"></i></div><span>${pattern.count} thread${pattern.count === 1 ? '' : 's'}${pattern.openCount ? ` · ${pattern.openCount} still open` : ''}</span>` : '<span class="no-count">no matching reports — flagged from the files themselves</span>'}</div>
         ${pattern.threads?.length ? `<div class="fail-evidence">${pattern.threads.map((thread) => `<a href="${esc(thread.url)}" target="_blank" rel="noreferrer noopener">#${thread.number} ${esc(thread.title)}${thread.comments ? ` · ${thread.comments} comments` : ''}</a>`).join('')}</div>` : ''}
-        ${pattern.commands?.length ? `<div class="command-block fail-fix"><button class="copy-mini" data-copy="${esc(pattern.commands.join('\n'))}" aria-label="Copy the mitigation" title="Copy mitigation">${icon('copy', 13)}</button>${esc(pattern.commands.join('\n'))}</div>` : ''}
+        ${pattern.commands?.length ? `<div class="command-block fail-fix"><button class="copy-mini" data-copy="${esc(pattern.commands.join('\n'))}" aria-label="Copy the mitigation" title="Copy mitigation">${icon('copy', 13)}<span>Copy</span></button>${esc(pattern.commands.join('\n'))}</div>` : ''}
       </div>
       <div class="fail-patch">${targetIndex >= 0 ? `<span class="patched">${icon('check', 12)}pre-empted in step ${String(targetIndex + 1).padStart(2, '0')}</span>` : '<span class="unpatched">listed after the run step</span>'}${pattern.origin === 'reported' ? `<button class="link-button" data-action="ask-failure" data-failure="${esc(pattern.id)}">Ask about this${hasAiConfig() ? '' : ' (local)'}</button>` : ''}</div>
     </article>`;
   }).join('');
-  return `<section class="panel fail-panel" aria-labelledby="fail-title">
+  return `<section class="panel fail-panel" id="route-failures" aria-labelledby="fail-title">
     <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('warning', 15)}</div><div><h3 id="fail-title">How this install usually breaks</h3><p class="panel-subtitle">Read before the steps — ranked by what ${esc(scan.totalThreads || 0)} recent ${scan.totalThreads === 1 ? 'thread' : 'threads'} actually say</p></div></div><span class="panel-count">${patterns.length} found</span></div>
     ${patterns.length ? `<div class="fail-list">${rows}</div>` : `<div class="fail-empty">${icon('check', 15)}<span>${esc(scan.notice || 'No installation failures were found in the recent threads.')}</span></div>`}
     <div class="fail-foot"><span>sampled ${scan.sampled?.issues || 0} issues · ${scan.sampled?.pulls || 0} pull requests${scan.sampled?.discussions ? ` · ${scan.sampled.discussions} discussions` : ''}</span>${scan.sources?.discussions === 'none' ? '<span>discussions need a server GitHub token (GraphQL only)</span>' : ''}</div>
@@ -659,15 +722,21 @@ function graphSvg(axes, selections, pathLength) {
   </svg></div>`;
 }
 
+function graphAltSelects(graph) {
+  // Readable stepwise alternative for small screens and keyboard users.
+  return `<details class="graph-alt"><summary>Choose branches as a list</summary><div class="graph-alt-body">${graph.axes.map((axis) => `<label class="graph-alt-row"><span><strong>${esc(axis.label)}</strong><em>${esc(axis.prompt)}</em></span><select class="select-field" data-graph-axis="${esc(axis.id)}" aria-label="${esc(axis.label)}">${axis.options.map((option) => `<option value="${esc(option.id)}" ${String(state.pathSelections[axis.id]) === String(option.id) ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}</select></label>`).join('')}</div></details>`;
+}
+
 function pathGraphPanel() {
   const graph = state.guide?.pathGraph;
   if (!graph?.axes?.length) return '';
   const steps = activePath();
   const pills = steps.map((entry, index) => `<span class="path-pill ${state.checked[keyOf(entry)] ? 'done' : ''}">${String(index + 1).padStart(2, '0')} ${esc(entry.title)}</span>`).join('');
   const label = selectionsLabel(graph.axes, state.pathSelections);
-  return `<section class="panel graph-panel" aria-labelledby="graph-title">
+  return `<section class="panel graph-panel" id="route-graph" aria-labelledby="graph-title">
     <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('grid', 15)}</div><div><h3 id="graph-title">Choose your path</h3><p class="panel-subtitle">${esc(graph.note || 'Pick a branch — only the relevant steps stay in the checklist.')}</p></div></div>${label ? `<span class="panel-count path-selection">${esc(label)}</span>` : ''}</div>
     ${graphSvg(graph.axes, state.pathSelections, steps.length)}
+    ${graphAltSelects(graph)}
     <div class="graph-axis-labels">${graph.axes.map((axis) => `<div class="axis-label"><strong>${esc(axis.label)}</strong><span>${esc(axis.prompt)}</span></div>`).join('')}</div>
     ${(() => {
     const chosen = graph.axes.map((axis) => axis.options.find((option) => option.id === state.pathSelections[axis.id])).filter(Boolean);
@@ -697,26 +766,37 @@ function resetPath() {
 }
 
 // --- Feature 1: the living checklist ---------------------------------------
+function stepStatus(entry, key) {
+  const isDone = Boolean(state.checked[key]);
+  const isFailed = failedIds().has(String(entry.id));
+  if (isFailed) return { code: 'failed', label: 'Needs fix' };
+  if (isDone) return { code: 'done', label: 'Confirmed' };
+  if (entry.revision > 1) return { code: 'revised', label: 'Corrected' };
+  return { code: 'pending', label: 'Pending' };
+}
+
 function installStepsPanel() {
   const steps = activePath();
   const { done, total, percent } = progressOf(steps, state.checked);
-  const failed = failedIds();
   const revision = currentRevision();
   const profile = expertiseProfile();
   const rows = steps.map((entry, index) => {
     const key = keyOf(entry, index);
     const isDone = Boolean(state.checked[key]);
-    const isFailed = failed.has(String(entry.id));
+    const isFailed = failedIds().has(String(entry.id));
+    const status = stepStatus(entry, key);
     const patched = (entry.patchedFor || []).map((id) => (state.guide?.failureScan?.patterns || []).find((pattern) => pattern.id === id)?.label).filter(Boolean);
     return `<article class="step-row ${isDone ? 'is-done' : ''} ${isFailed ? 'is-failed' : ''} ${entry.revision > 1 ? 'is-revised' : ''}">
+      <div class="step-rail" aria-hidden="true"><span class="step-dot status-${status.code}">${status.code === 'done' ? icon('check', 11) : status.code === 'failed' ? icon('warning', 11) : ''}</span>${index < steps.length - 1 ? '<span class="step-line"></span>' : ''}</div>
       <div class="step-number">${entry.revision > 1 ? icon('refresh', 13) : String(index + 1).padStart(2, '0')}</div>
       <div class="step-body">
-        <h4 class="step-title">${esc(entry.title)}${entry.revision > 1 ? '<span class="rev-badge">revised</span>' : ''}</h4>
+        <h4 class="step-title"><span class="step-id mono">${esc(entry.id)}</span>${esc(entry.title)}${entry.revision > 1 ? '<span class="rev-badge">revised</span>' : ''}</h4>
+        <p class="step-state">Status: ${status.label}${isDone && entry.revision > 1 ? ' · kept through revision' : ''}</p>
         ${entry.detail ? `<p class="step-detail">${esc(entry.detail)}</p>` : ''}
         ${entry.guard ? `<p class="step-guard">${icon('shield', 12)}${esc(entry.guard)}</p>` : ''}
         ${patched.length ? `<p class="step-patch">${icon('check', 12)}patched for: ${patched.map(esc).join(', ')}</p>` : ''}
-        ${entry.command ? `<div class="command-block"><button class="copy-mini" data-copy="${esc(entry.command)}" aria-label="Copy command" title="Copy command">${icon('copy', 13)}</button>${esc(entry.command)}</div>` : ''}
-        ${entry.verify ? `<div class="command-block verify-block"><button class="copy-mini" data-copy="${esc(entry.verify)}" aria-label="Copy check" title="Copy check">${icon('check', 13)}</button>${esc(entry.verify)}</div>` : ''}
+        ${entry.command ? `<div class="command-block"><button class="copy-mini" data-copy="${esc(entry.command)}" aria-label="Copy command" title="Copy command">${icon('copy', 13)}<span>Copy</span></button>${esc(entry.command)}</div>` : ''}
+        ${entry.verify ? `<div class="command-block verify-block"><button class="copy-mini" data-copy="${esc(entry.verify)}" aria-label="Copy check" title="Copy check">${icon('check', 13)}<span>Copy</span></button>${esc(entry.verify)}</div>` : ''}
         <div class="step-actions">
           ${isDone ? `<button class="link-button" data-action="unfail" data-step="${esc(entry.id)}">Reopen</button>` : ''}
           <button class="fail-button" data-action="step-failed" data-step="${esc(entry.id)}">${icon('warning', 12)} This failed</button>
@@ -727,8 +807,8 @@ function installStepsPanel() {
     </article>`;
   }).join('');
   const hidden = state.guide?.hiddenNotes || 0;
-  return `<section class="panel steps-panel" aria-labelledby="steps-title">
-    <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('list', 15)}</div><div><h3 id="steps-title">Installation steps</h3><p class="panel-subtitle">A live path — it changes when something fails${revision > 1 ? `, now on revision ${revision}` : ''}</p></div></div><span class="panel-count">${done}/${total} complete</span></div>
+  return `<section class="panel steps-panel" id="route-path" aria-labelledby="steps-title">
+    <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('route', 15)}</div><div><h3 id="steps-title">Installation steps</h3><p class="panel-subtitle">A live path — it changes when something fails${revision > 1 ? `, now on revision ${revision}` : ''}</p></div></div><span class="panel-count">${done}/${total} complete</span></div>
     <div class="install-list">${rows || '<div class="fail-empty"><span>No steps were produced for this path. Try another branch of the graph.</span></div>'}</div>
     <div class="install-progress"><div class="progress-copy"><span>${percent === 100 ? 'Installation path complete — tick the contract to close it out' : 'Progress through your installation path'}</span><strong>${percent}%</strong></div><div class="progress-track"><div class="progress-fill" style="width:${percent}%"></div></div></div>
     <div class="steps-foot">
@@ -736,6 +816,25 @@ function installStepsPanel() {
       ${state.guide?.fastPath ? `<button class="secondary-button" data-copy="${esc(state.guide.fastPath)}">${icon('copy', 13)} Copy whole path</button>` : ''}
       ${hidden ? `<button class="link-button" data-action="toggle-hidden-notes">${icon(state.showHiddenNotes ? 'eyeOff' : 'eye', 12)} ${state.showHiddenNotes ? 'Hide' : `Show ${hidden} quieter note${hidden === 1 ? '' : 's'}`}</button>` : ''}
       ${revision > 1 ? `<button class="link-button" data-action="path-restore">${icon('refresh', 12)} Restore the original path</button>` : ''}
+    </div>
+  </section>`;
+}
+
+function recoveryReport() {
+  const recovery = state.recovery;
+  if (!recovery) return '';
+  const matched = (recovery.matched || []).map((entry) => `<li><strong>${esc(entry.label || entry.id)}</strong>${entry.hit ? `<code>${esc(String(entry.hit).slice(0, 80))}</code>` : ''}</li>`).join('');
+  const checks = (recovery.checks || []).map((check) => `<div class="command-block"><button class="copy-mini" data-copy="${esc(check)}" aria-label="Copy check" title="Copy check">${icon('check', 13)}<span>Copy</span></button>${esc(check)}</div>`).join('');
+  return `<section class="panel recovery-panel" aria-labelledby="recovery-title" aria-live="polite">
+    <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('refresh', 15)}</div><div><h3 id="recovery-title">Recovery applied — revision ${Number(recovery.revision) || currentRevision()}</h3><p class="panel-subtitle">Completed steps are locked and untouched. Only the failing step forward was rewritten.</p></div></div><span class="panel-count">${esc(recovery.source === 'ai' ? 'AI diagnosis' : 'local rule match')} · ${esc(recovery.confidence || 'medium')} confidence</span></div>
+    <div class="recovery-body">
+      <p class="recovery-diagnosis">${safe(recovery.diagnosis || 'The path was rebuilt from the fault forward.')}</p>
+      ${recovery.secondSuspect ? `<p class="recovery-second">${safe(recovery.secondSuspect)}</p>` : ''}
+      ${matched ? `<h4>Matched signatures</h4><ul class="recovery-list">${matched}</ul>` : ''}
+      ${checks ? `<h4>Prove the fix landed</h4>${checks}` : ''}
+      ${(recovery.followUps || []).length ? `<h4>Answer next</h4><ul class="recovery-list">${recovery.followUps.map((q) => `<li>${esc(q)}</li>`).join('')}</ul>` : ''}
+      ${recovery.note ? `<p class="field-hint">${safe(recovery.note)}</p>` : ''}
+      <div class="recovery-actions"><button class="secondary-button" data-action="path-restore">${icon('refresh', 13)} Roll back this revision</button><button class="link-button" data-action="recovery-dismiss">Dismiss report</button></div>
     </div>
   </section>`;
 }
@@ -758,16 +857,18 @@ function failureModal() {
   const step = (state.guide?.steps || []).find((entry) => String(entry.id) === String(state.failure.stepId)) || {};
   const known = (state.guide?.failureScan?.patterns || []).filter((pattern) => !state.failure.stepId || !pattern.patchStepId || pattern.patchStepId === step.id).slice(0, 4);
   const loading = state.failure.saving;
+  const completedCount = activePath().findIndex((entry) => String(entry.id) === String(step.id));
   return `<div class="modal-layer" data-action="close-on-backdrop"><section class="modal fail-modal" role="dialog" aria-modal="true" aria-labelledby="fail-modal-title">
     <div class="modal-head"><div><h2 id="fail-modal-title">“${esc(step.title || 'This step')}” failed</h2><p>Git-Up keeps everything you already completed and rebuilds the path from here. Nothing is re-run.</p></div><button class="icon-button" data-action="close-modal" aria-label="Close">${icon('close', 18)}</button></div>
     <form class="modal-body" id="failure-form">
       <label class="form-field" for="failure-error"><span class="field-label">Paste what the terminal said <em>helps most</em></span>
         <textarea id="failure-error" class="text-field failure-text" rows="7" spellcheck="false" placeholder="npm ERR! code ERESOLVE&#10;npm ERR! Could not resolve dependency tree…">${esc(state.failure.errorText)}</textarea>
-        <span class="field-hint">Kept on this machine and only sent to the AI endpoint you configured. Even one line usually matches a known signature.</span>
+        <span class="field-hint">Kept on this machine and only sent to the AI endpoint you configured. Even one line usually matches a known signature. Keys that look like secrets are redacted from anything shown back.</span>
       </label>
       ${known.length ? `<div class="form-field"><span class="field-label">Or start from what this repo’s issues already show</span><div class="quick-picks">${known.map((pattern) => `<button type="button" class="quick-pick" data-failure-pick="${esc(pattern.why)}">${esc(pattern.label)}${pattern.count ? ` · ${pattern.count}` : ''}</button>`).join('')}</div></div>` : ''}
       <label class="form-field"><span class="field-label">What happened, in words (optional)</span><input id="failure-note" class="text-field" value="${esc(state.failure.note)}" placeholder="It printed a warning then exited" /></label>
-      <div class="fail-expect"><span>${icon('shield', 12)}</span><p>Your ${activePath().findIndex((entry) => String(entry.id) === String(step.id))} completed step${state.revisions.length ? ` and ${state.revisions.length} earlier revision${state.revisions.length === 1 ? '' : 's'}` : ''} stay exactly as they are. Only the failing step and what follows it get rewritten.</p></div>
+      <div class="fail-expect"><span>${icon('shield', 12)}</span><p>Your ${completedCount < 0 ? 0 : completedCount} completed step${completedCount === 1 ? '' : 's'}${state.revisions.length ? ` and ${state.revisions.length} earlier revision${state.revisions.length === 1 ? '' : 's'}` : ''} stay exactly as they are. Only the failing step and what follows it get rewritten.</p></div>
+      ${state.failure.error ? `<div class="error-banner" role="alert">${icon('warning', 15)}<span>${safe(state.failure.error)}</span></div>` : ''}
       <div class="modal-foot"><button type="button" class="secondary-button" data-action="close-modal">Cancel</button><button class="install-button" type="submit" ${loading ? 'disabled' : ''}>${loading ? `${icon('refresh', 14, 'spinner')} Rebuilding the path` : `${icon('spark', 14)} Rebuild this path`}</button></div>
     </form>
   </section></div>`;
@@ -775,7 +876,7 @@ function failureModal() {
 
 function openFailure(stepId) {
   state.modal = 'failure';
-  state.failure = { stepId, errorText: state.failure?.errorText || '', note: '', saving: false };
+  state.failure = { stepId, errorText: state.failure?.errorText || '', note: '', saving: false, error: '' };
   render();
   setTimeout(() => document.querySelector('#failure-error')?.focus(), 40);
 }
@@ -788,7 +889,7 @@ async function submitRecovery(event) {
   const textarea = document.querySelector('#failure-error');
   const noteInput = document.querySelector('#failure-note');
   const errorText = `${textarea?.value || ''}${noteInput?.value ? `\nuser note: ${noteInput.value}` : ''}`.trim();
-  state.failure = { ...state.failure, errorText: textarea?.value || '', note: noteInput?.value || '', saving: true };
+  state.failure = { ...state.failure, errorText: textarea?.value || '', note: noteInput?.value || '', saving: true, error: '' };
   render();
   try {
     const body = {
@@ -819,14 +920,13 @@ async function submitRecovery(event) {
     state.revisions = [...state.revisions, revisionEntry({ revision: recovery.revision, failedStep, recovery, previousCount: previous.length, nextCount: revised.steps.length, source: recovery.source })];
     state.recovery = recovery;
     state.modal = null;
-    state.failure = { stepId: '', errorText: '', note: '', saving: false };
+    state.failure = { stepId: '', errorText: '', note: '', saving: false, error: '' };
     persistSession();
     render();
-    document.querySelector('.rev-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.querySelector('.recovery-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     showToast(recovery.source === 'ai' ? 'Path rebuilt from your error and the repository files.' : 'Path rebuilt from a known failure pattern. Connect an AI provider for a repo-specific diagnosis.', recovery.source === 'ai' ? 'success' : 'error');
   } catch (error) {
     state.failure = { ...state.failure, saving: false, error: error.message };
-    state.error = error.message || 'The path could not be rebuilt.';
     render();
   }
 }
@@ -837,6 +937,7 @@ function restoreOriginalPath() {
   state.revisions = [];
   state.superseded = [];
   state.failures = [];
+  state.recovery = null;
   persistSession();
   render();
   showToast('Original path restored. Completed steps were kept.');
@@ -856,7 +957,7 @@ function contractPanel() {
   const ticked = items.filter((item) => state.contractChecked[item.id]).length;
   const riskTone = { high: 'red', medium: 'amber', low: 'mint' };
   const section = (title, body) => `<div class="contract-section"><h4>${esc(title)}</h4>${body}</div>`;
-  return `<section class="panel contract-panel" aria-labelledby="contract-title">
+  return `<section class="panel contract-panel" id="route-contract" aria-labelledby="contract-title">
     <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('shield', 15)}</div><div><h3 id="contract-title">Install contract</h3><p class="panel-subtitle">What this path assumes, changes, and requires — check it off when the app is running</p></div></div><span class="panel-count">${ticked}/${items.length} verified</span></div>
     <div class="contract-meta">
       <span class="mono contract-id">${esc(contract.contractId)}</span>
@@ -868,7 +969,7 @@ function contractPanel() {
       ${section('Exact versions expected', contract.expects?.length ? `<ul class="contract-list">${contract.expects.map((entry) => `<li><div><strong>${esc(entry.name)}</strong><code>${esc(entry.required)}</code></div><span class="from">${esc(entry.detectedFrom)}</span><em class="conf-${entry.confidence}">${esc(entry.confidence)}</em></li>`).join('')}</ul>` : '<p class="contract-none">Nothing is pinned by the project itself — see the gap note below.</p>')}
       ${section('What gets installed', contract.installs?.length ? `<ul class="contract-list">${contract.installs.map((entry) => `<li><div><strong>${esc(entry.what)}</strong><span>${esc(entry.detail)}</span></div><em class="scope">${esc(entry.kind)}</em></li>`).join('')}</ul>` : '<p class="contract-none">No manifest was readable, so nothing could be listed.</p>')}
       ${section('Permissions this needs', `<ul class="contract-list">${(contract.permissions || []).map((entry) => `<li><div><strong>${esc(entry.capability)}</strong><span>${esc(entry.why)}</span></div><em class="risk tone-${riskTone[entry.risk] || 'mint'}">${esc(entry.risk)}</em></li>`).join('')}</ul>`)}
-      ${section('What “working” looks like', `<p class="contract-state">${esc(contract.workingState)}</p>${contract.verification?.command ? `<div class="command-block verify-block"><button class="copy-mini" data-copy="${esc(contract.verification.command)}" aria-label="Copy verification command" title="Copy verification">${icon('copy', 13)}</button>${esc(contract.verification.command)}</div><p class="expect-line">${icon('check', 12)}${esc(contract.verification.expect)}</p>` : ''}`)}
+      ${section('What “working” looks like', `<p class="contract-state">${esc(contract.workingState)}</p>${contract.verification?.command ? `<div class="command-block verify-block"><button class="copy-mini" data-copy="${esc(contract.verification.command)}" aria-label="Copy verification command" title="Copy verification">${icon('copy', 13)}<span>Copy</span></button>${esc(contract.verification.command)}</div><p class="expect-line">${icon('check', 12)}${esc(contract.verification.expect)}</p>` : ''}`)}
     </div>
     ${contract.gaps?.length ? `<div class="contract-gaps"><h4>${icon('info', 13)} What this contract could not determine</h4><ul>${contract.gaps.map((gap) => `<li><strong>${esc(gap.field)}</strong> — ${esc(gap.reason)}</li>`).join('')}</ul></div>` : ''}
     <div class="contract-check">
@@ -890,13 +991,31 @@ function toggleContractItem(id) {
   render();
 }
 
+function closeModal() {
+  state.modal = null;
+  render();
+  if (state.lastFocusId) {
+    const target = document.querySelector(`[data-action="${state.lastFocusId}"]`) || document.querySelector('#repo-input');
+    target?.focus?.();
+    state.lastFocusId = '';
+  }
+}
+
 function render() {
   let content = '';
   if (state.mode === 'loading') content = `<main class="main">${repoForm()}${loadingView()}</main>`;
   else if (state.mode === 'analysis' && state.guide) content = `<main class="main">${repoForm()}${analysisView()}</main>`;
   else content = `<main class="main">${emptyView()}</main>`;
-  root.innerHTML = `<div class="app-shell">${topbar()}<div class="layout">${sidebar()}${content}</div>${state.modal === 'settings' ? settingsModal() : ''}${state.modal === 'install' ? installModal() : ''}${state.modal === 'failure' ? failureModal() : ''}${toastHtml()}</div>`;
+  root.innerHTML = `<div class="app-shell">${topbar()}<div class="layout">${sidebar()}${content}</div>${state.modal === 'settings' ? settingsModal() : ''}${state.modal === 'install' ? installModal() : ''}${state.modal === 'failure' ? failureModal() : ''}${toastHtml()}<div class="sr-only" aria-live="polite">${esc(liveSummary())}</div></div>`;
   bindEvents();
+}
+
+/** Short screen-reader summary of the current route state. */
+function liveSummary() {
+  if (state.mode !== 'analysis' || !state.guide) return '';
+  const steps = activePath();
+  const { done, total } = progressOf(steps, state.checked);
+  return `Route for ${shortName(state.guide)}: ${done} of ${total} steps confirmed${state.revisions.length ? `, revision ${currentRevision()}` : ''}.`;
 }
 
 function resetExplorer() {
@@ -904,6 +1023,7 @@ function resetExplorer() {
   state.insightLoading = null;
   state.insightError = '';
   state.insightCache = {};
+  state.insightQuestion = '';
 }
 
 async function analyze() {
@@ -920,7 +1040,7 @@ async function analyze() {
   render();
   try {
     const config = hasAiConfig() ? { ...state.settings } : null;
-    const response = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repoUrl: state.repoUrl, config }) });
+    const response = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repoUrl: state.repoUrl, expertise: state.expertise, config }) });
     const payload = await response.json();
     if (!response.ok || !payload.ok) throw new Error(payload.error || 'The repository could not be analyzed.');
     state.guide = payload.guide;
@@ -1011,7 +1131,7 @@ function saveSettings(event) {
   state.settings = values;
   sessionStorage.setItem('git-up-api-key', values.apiKey);
   localStorage.setItem('git-up-settings', JSON.stringify({ baseUrl: values.baseUrl, endpoint: values.endpoint, model: values.model, modelOptions: state.modelOptions }));
-  state.modal = null;
+  closeModal();
   showToast(hasAiConfig() ? 'AI provider connected for this session.' : 'Provider configuration saved. Local scan remains available.');
 }
 async function copyText(text) {
@@ -1042,10 +1162,10 @@ function bindEvents() {
   document.querySelector('#repo-input')?.addEventListener('input', (event) => { state.repoUrl = event.target.value; });
   document.querySelector('#settings-form')?.addEventListener('submit', saveSettings);
   document.querySelectorAll('[data-action="new-analysis"]').forEach((el) => el.addEventListener('click', (e) => { e.preventDefault(); newAnalysis(); }));
-  document.querySelectorAll('[data-action="settings"]').forEach((el) => el.addEventListener('click', () => { state.modal = 'settings'; render(); setTimeout(() => document.querySelector('#base-url')?.focus(), 30); }));
-  document.querySelectorAll('[data-action="close-modal"]').forEach((el) => el.addEventListener('click', () => { state.modal = null; render(); }));
-  document.querySelectorAll('[data-action="close-on-backdrop"]').forEach((el) => el.addEventListener('click', (event) => { if (event.target === el) { state.modal = null; render(); } }));
-  document.querySelectorAll('[data-action="install"]').forEach((el) => el.addEventListener('click', () => { state.modal = 'install'; render(); }));
+  document.querySelectorAll('[data-action="settings"]').forEach((el) => el.addEventListener('click', () => { state.lastFocusId = 'settings'; state.modal = 'settings'; render(); setTimeout(() => document.querySelector('#base-url')?.focus(), 30); }));
+  document.querySelectorAll('[data-action="close-modal"]').forEach((el) => el.addEventListener('click', closeModal));
+  document.querySelectorAll('[data-action="close-on-backdrop"]').forEach((el) => el.addEventListener('click', (event) => { if (event.target === el) closeModal(); }));
+  document.querySelectorAll('[data-action="install"]').forEach((el) => el.addEventListener('click', () => { state.lastFocusId = 'install'; state.modal = 'install'; render(); }));
   document.querySelectorAll('[data-action="toggle-key"]').forEach((el) => el.addEventListener('click', () => { state.secretVisible = !state.secretVisible; render(); }));
   document.querySelectorAll('[data-action="fetch-models"]').forEach((el) => el.addEventListener('click', fetchModels));
   document.querySelectorAll('[data-example]').forEach((el) => el.addEventListener('click', () => { state.repoUrl = el.dataset.example; render(); analyze(); }));
@@ -1108,6 +1228,15 @@ function bindEvents() {
   document.querySelectorAll('[data-action="explorer"]').forEach((el) => el.addEventListener('click', () => runInsight(el.dataset.mode)));
   document.querySelectorAll('[data-action="followup"]').forEach((el) => el.addEventListener('click', () => runInsight('custom', el.dataset.question, el.dataset.basemode)));
   document.querySelectorAll('[data-action="insight-close"]').forEach((el) => el.addEventListener('click', () => { state.insight = null; state.insightError = ''; render(); }));
+  document.querySelector('#insight-question')?.addEventListener('input', (event) => { state.insightQuestion = event.target.value; });
+  document.querySelector('#insight-base')?.addEventListener('change', (event) => { state.insightBase = event.target.value; });
+  document.querySelector('#insight-custom')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const question = document.querySelector('#insight-question')?.value.trim() || '';
+    if (!question) { showToast('Type a question about this repository first.', 'error'); return; }
+    state.insightQuestion = question;
+    runInsight('custom', question, document.querySelector('#insight-base')?.value || 'recommendations');
+  });
   document.querySelectorAll('[data-step-id]').forEach((el) => el.addEventListener('change', (event) => { state.checked[event.target.dataset.stepId] = event.target.checked; persistSession(); render(); }));
   // v2: reader mode, graph branch, failure recovery, contract ticks
   document.querySelectorAll('[data-expertise]').forEach((el) => el.addEventListener('click', () => setExpertise(el.dataset.expertise)));
@@ -1115,13 +1244,15 @@ function bindEvents() {
     el.addEventListener('click', () => setPathOption(el.dataset.axis, el.dataset.option));
     el.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setPathOption(el.dataset.axis, el.dataset.option); } });
   });
+  document.querySelectorAll('[data-graph-axis]').forEach((el) => el.addEventListener('change', (event) => setPathOption(el.dataset.graphAxis, event.target.value)));
   document.querySelectorAll('[data-action="resume-dismiss"]').forEach((el) => el.addEventListener('click', () => { state.resumeNote = ''; render(); }));
+  document.querySelectorAll('[data-action="recovery-dismiss"]').forEach((el) => el.addEventListener('click', () => { state.recovery = null; render(); }));
   document.querySelectorAll('[data-action="path-reset"]').forEach((el) => el.addEventListener('click', resetPath));
   document.querySelectorAll('[data-action="step-failed"]').forEach((el) => el.addEventListener('click', () => openFailure(el.dataset.step)));
   document.querySelectorAll('[data-action="unfail"]').forEach((el) => el.addEventListener('click', () => unfailStep(el.dataset.step)));
   document.querySelectorAll('[data-action="path-restore"]').forEach((el) => el.addEventListener('click', restoreOriginalPath));
   document.querySelectorAll('[data-action="toggle-hidden-notes"]').forEach((el) => el.addEventListener('click', () => { state.showHiddenNotes = !state.showHiddenNotes; render(); }));
-  document.querySelectorAll('[data-action="close-failure"]').forEach((el) => el.addEventListener('click', () => { state.modal = null; render(); }));
+  document.querySelectorAll('[data-action="close-failure"]').forEach((el) => el.addEventListener('click', closeModal));
   document.querySelector('#failure-form')?.addEventListener('submit', submitRecovery);
   document.querySelectorAll('[data-failure-pick]').forEach((el) => el.addEventListener('click', () => {
     const field = document.querySelector('#failure-error');
@@ -1151,9 +1282,9 @@ function saveRename(id) {
 }
 
 document.addEventListener('keydown', (event) => {
-  if ((event.metaKey || event.ctrlKey) && event.key === ',') { event.preventDefault(); state.modal = 'settings'; render(); setTimeout(() => document.querySelector('#base-url')?.focus(), 30); }
+  if ((event.metaKey || event.ctrlKey) && event.key === ',') { event.preventDefault(); state.lastFocusId = 'settings'; state.modal = 'settings'; render(); setTimeout(() => document.querySelector('#base-url')?.focus(), 30); }
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && state.mode !== 'loading') { event.preventDefault(); analyze(); }
-  if (event.key === 'Escape' && state.modal) { state.modal = null; render(); }
+  if (event.key === 'Escape' && state.modal) { closeModal(); }
   else if (event.key === 'Escape' && state.openMenuId) { state.openMenuId = null; render(); }
 });
 document.addEventListener('click', (event) => {

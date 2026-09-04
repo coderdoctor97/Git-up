@@ -1,0 +1,594 @@
+{
+ "source": "local-scan",
+ "analyzedAt": "2026-09-01T10:00:00.000Z",
+ "summary": "widget is a TypeScript repository. Git-Up scanned 6 setup-related files and found 4 actions to get it running locally.",
+ "confidence": "high",
+ "repository": {
+  "owner": "acme",
+  "repo": "widget",
+  "canonicalUrl": "https://github.com/acme/widget",
+  "apiPath": "acme/widget",
+  "name": "widget",
+  "description": "A widget.",
+  "stars": 12,
+  "language": "TypeScript",
+  "defaultBranch": "main"
+ },
+ "requirements": [
+  "Node.js 20 or newer",
+  "Values for the environment variables listed below"
+ ],
+ "dependencies": [
+  {
+   "name": "express",
+   "version": "^4.19.2",
+   "kind": "runtime"
+  }
+ ],
+ "environment": [
+  "DATABASE_URL",
+  "API_KEY"
+ ],
+ "steps": [
+  {
+   "id": "clone",
+   "key": "clone",
+   "title": "Clone the repository",
+   "command": "git clone https://github.com/acme/widget\nacme-widget-not-used",
+   "detail": "Download the source.",
+   "order": 10,
+   "revision": 1
+  },
+  {
+   "id": "dependencies",
+   "key": "dependencies",
+   "title": "Install project dependencies",
+   "command": "npm install",
+   "detail": "Install declared libraries.",
+   "order": 25,
+   "revision": 1,
+   "patchedFor": [
+    "network-tls"
+   ],
+   "guard": "Seen in 3 reported threads: registry unreachable."
+  },
+  {
+   "id": "env",
+   "key": "env",
+   "title": "Create your environment file",
+   "command": "cp .env.example .env",
+   "detail": "Start from the template.",
+   "order": 35,
+   "revision": 1
+  },
+  {
+   "id": "run",
+   "key": "run",
+   "title": "Start the development server",
+   "command": "npm run dev",
+   "detail": "Launch locally.",
+   "order": 65,
+   "revision": 1,
+   "verify": "curl -sS -o /dev/null -w \"%{http_code}\" http://localhost:3000"
+  }
+ ],
+ "explanations": [
+  {
+   "stepId": "dependencies",
+   "title": "Install project dependencies",
+   "body": "A lockfile makes the install repeatable."
+  }
+ ],
+ "notes": [
+  "Review project-specific notes in the README before using it in production.",
+  "GitHub rate limit reached; a lightweight scan was used."
+ ],
+ "files": [
+  "README.md",
+  "package.json",
+  "Dockerfile",
+  ".env.example"
+ ],
+ "fileTree": [
+  "README.md",
+  "package.json",
+  "Dockerfile",
+  ".env.example",
+  "src/index.ts"
+ ],
+ "plainOverview": {
+  "analogy": "like a recipe box",
+  "problem": "it saves setup time",
+  "audience": "students and shop owners",
+  "howItWorks": [
+   "pick a recipe",
+   "gather the items",
+   "cook it"
+  ]
+ },
+ "followUps": [
+  "What should run first?",
+  "Which port is free?"
+ ],
+ "anticipatedFailures": [],
+ "health": {
+  "score": 62,
+  "method": "evidence-only",
+  "computedAt": "2026-09-01T10:00:00.000Z",
+  "band": {
+   "id": "attention",
+   "label": "Needs attention",
+   "tone": "amber",
+   "note": "Plan for manual fixes."
+  },
+  "weights": {
+   "documentation": 0.26,
+   "reproducibility": 0.22,
+   "freshness": 0.16,
+   "failurePressure": 0.2,
+   "mainBranch": 0.16
+  },
+  "caps": [
+   "Default branch checks are failing on main."
+  ],
+  "factors": [
+   {
+    "id": "documentation",
+    "label": "Documentation quality",
+    "score": 74,
+    "weight": 0.26,
+    "detail": "README quality: install section, 2 command blocks.",
+    "signals": [
+     "install section"
+    ]
+   },
+   {
+    "id": "reproducibility",
+    "label": "Reproducible setup",
+    "score": 80,
+    "weight": 0.22,
+    "detail": "Reproducibility aids: lockfile (package-lock.json), env template.",
+    "signals": [
+     "lockfile"
+    ]
+   },
+   {
+    "id": "freshness",
+    "label": "Instruction freshness",
+    "score": 100,
+    "weight": 0.16,
+    "detail": "Pushed 2 days ago.",
+    "signals": []
+   },
+   {
+    "id": "failurePressure",
+    "label": "Reported install failures",
+    "score": 40,
+    "weight": 0.2,
+    "detail": "5 of the last 40 threads describe a setup failure.",
+    "signals": [
+     "sampled: 40 issues"
+    ]
+   },
+   {
+    "id": "mainBranch",
+    "label": "Main branch status",
+    "score": 24,
+    "weight": 0.16,
+    "detail": "2 checks failing on main (test, lint).",
+    "signals": [
+     "test",
+     "lint"
+    ]
+   }
+  ],
+  "evidence": {
+   "repository": "https://github.com/acme/widget",
+   "branch": "main",
+   "ageDays": 2,
+   "openIssues": 14,
+   "stars": 12,
+   "ci": {
+    "state": "failing",
+    "failing": 2,
+    "total": 9
+   },
+   "threadsSampled": 40
+  }
+ },
+ "failureScan": {
+  "available": true,
+  "notice": "",
+  "totalThreads": 40,
+  "installRelated": 5,
+  "sources": {
+   "issues": "ok",
+   "pulls": "ok",
+   "discussions": "none"
+  },
+  "sampled": {
+   "issues": 30,
+   "pulls": 10,
+   "discussions": 0
+  },
+  "patterns": [
+   {
+    "rank": 1,
+    "id": "network-tls",
+    "label": "Registry / proxy / TLS unreachable",
+    "why": "Corporate proxies stop the download step.",
+    "origin": "reported",
+    "count": 3,
+    "openCount": 2,
+    "patchStepId": "dependencies",
+    "commands": [
+     "npm config get registry"
+    ],
+    "threads": [
+     {
+      "number": 7427,
+      "title": "npm install fails behind proxy",
+      "url": "https://github.com/acme/widget/issues/7427",
+      "state": "open",
+      "comments": 9
+     }
+    ]
+   },
+   {
+    "rank": 2,
+    "id": "database-services",
+    "label": "Database or backing service missing",
+    "why": "The app expects postgres on localhost.",
+    "origin": "reported",
+    "count": 2,
+    "openCount": 1,
+    "patchStepId": "services",
+    "commands": [
+     "docker compose up -d db"
+    ],
+    "threads": []
+   },
+   {
+    "rank": 3,
+    "id": "missing-module",
+    "label": "Module not found at first run",
+    "why": "The app starts before packages are installed.",
+    "origin": "inferred",
+    "count": 0,
+    "openCount": 0,
+    "patchStepId": "dependencies",
+    "commands": [],
+    "threads": []
+   }
+  ]
+ },
+ "pathGraph": {
+  "defaults": {
+   "method": "native",
+   "os": "linux",
+   "profile": "full"
+  },
+  "note": "3 decisions derived from the repository.",
+  "axes": [
+   {
+    "id": "method",
+    "label": "Install method",
+    "prompt": "Container or on your machine?",
+    "options": [
+     {
+      "id": "native",
+      "label": "Native",
+      "detail": "Faster to debug.",
+      "evidence": "package manifest present",
+      "removes": [
+       "docker"
+      ]
+     },
+     {
+      "id": "docker",
+      "label": "Docker",
+      "detail": "Only Docker needed.",
+      "evidence": "Dockerfile found",
+      "tradeoff": "Edits need a rebuild.",
+      "removes": [
+       "dependencies",
+       "env",
+       "run"
+      ],
+      "adds": [
+       {
+        "id": "docker",
+        "title": "Start the container path",
+        "command": "docker build -t widget .",
+        "detail": "Use the repo image.",
+        "order": 20
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "os",
+    "label": "Your platform",
+    "prompt": "Which machine?",
+    "options": [
+     {
+      "id": "macos",
+      "label": "macOS",
+      "detail": "Both chips."
+     },
+     {
+      "id": "linux",
+      "label": "Linux",
+      "detail": "POSIX shell."
+     },
+     {
+      "id": "windows",
+      "label": "Windows",
+      "detail": "Use Git Bash.",
+      "warning": "cp/export are not PowerShell commands.",
+      "removes": [
+       "env"
+      ],
+      "adds": [
+       {
+        "id": "env-windows",
+        "title": "Create your env file (PowerShell)",
+        "command": "Copy-Item .env.example .env",
+        "detail": "Windows spelling.",
+        "order": 34
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "profile",
+    "label": "Scope",
+    "prompt": "Just run it, or work in it?",
+    "options": [
+     {
+      "id": "minimal",
+      "label": "Minimal",
+      "detail": "Only what is required."
+     },
+     {
+      "id": "full",
+      "label": "Full workspace",
+      "detail": "Adds checks.",
+      "adds": [
+       {
+        "id": "test",
+        "title": "Run the test suite",
+        "command": "npm test",
+        "detail": "Proves health.",
+        "order": 70
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "defaultPath": [
+  {
+   "id": "clone",
+   "key": "clone",
+   "title": "Clone the repository",
+   "command": "git clone https://github.com/acme/widget\nacme-widget-not-used",
+   "detail": "Download the source.",
+   "order": 10,
+   "revision": 1
+  },
+  {
+   "id": "dependencies",
+   "key": "dependencies",
+   "title": "Install project dependencies",
+   "command": "npm install",
+   "detail": "Install declared libraries.",
+   "order": 25,
+   "revision": 1,
+   "patchedFor": [
+    "network-tls"
+   ],
+   "guard": "Seen in 3 reported threads: registry unreachable."
+  },
+  {
+   "id": "env",
+   "key": "env",
+   "title": "Create your environment file",
+   "command": "cp .env.example .env",
+   "detail": "Start from the template.",
+   "order": 35,
+   "revision": 1
+  },
+  {
+   "id": "run",
+   "key": "run",
+   "title": "Start the development server",
+   "command": "npm run dev",
+   "detail": "Launch locally.",
+   "order": 65,
+   "revision": 1,
+   "verify": "curl -sS -o /dev/null -w \"%{http_code}\" http://localhost:3000"
+  }
+ ],
+ "contract": {
+  "contractId": "GITUP-ABC1234",
+  "issuedAt": "2026-09-01T10:00:00.000Z",
+  "status": "proposed",
+  "basis": {
+   "repository": "https://github.com/acme/widget",
+   "branch": "main",
+   "source": "direct file parse, no model involved",
+   "fileCount": 6,
+   "files": [
+    "package.json",
+    "README.md"
+   ],
+   "failureScan": "2 reported signature(s)"
+  },
+  "expects": [
+   {
+    "name": "Node.js",
+    "required": ">=20",
+    "detectedFrom": "package.json \u2192 engines.node",
+    "confidence": "declared"
+   }
+  ],
+  "installs": [
+   {
+    "what": "3 packages",
+    "kind": "packages",
+    "detail": "1 runtime, 2 development.",
+    "scope": "./node_modules"
+   }
+  ],
+  "permissions": [
+   {
+    "capability": "Bind localhost:3000",
+    "why": "The dev server listens there.",
+    "risk": "low",
+    "scope": "loopback"
+   }
+  ],
+  "verification": {
+   "command": "curl -sS -o /dev/null -w \"http %{http_code}\\n\" http://localhost:3000",
+   "expect": "HTTP 200.",
+   "port": 3000
+  },
+  "workingState": "The process stays alive and http://localhost:3000 answers.",
+  "checklist": [
+   {
+    "id": "expect-node.js",
+    "label": "Node.js reports >=20",
+    "hint": "package.json"
+   },
+   {
+    "id": "verify-command",
+    "label": "Verification command returns the expected result",
+    "hint": "curl"
+   }
+  ],
+  "gaps": [
+   {
+    "field": "privileged commands",
+    "reason": "Nothing needing sudo was found in the scanned files."
+   }
+  ],
+  "guarantees": [
+   "Git-Up never runs these commands.",
+   "No command was invented."
+  ],
+  "signature": {
+   "by": "Git-Up install planner",
+   "method": "content digest of the terms above",
+   "termsHash": "ABC1234",
+   "evidenceCount": 6,
+   "healthScore": 62
+  }
+ },
+ "expertise": {
+  "id": "some",
+  "label": "I\u2019ve used similar tools before",
+  "short": "Some experience",
+  "detail": "Standard depth.",
+  "explanation": "normal",
+  "warnings": "relevant",
+  "tempo": "a normal terminal session"
+ },
+ "session": {
+  "revision": 1,
+  "checked": {},
+  "failures": [],
+  "revisions": []
+ },
+ "tuning": {
+  "steps": [
+   {
+    "id": "clone",
+    "key": "clone",
+    "title": "Clone the repository",
+    "command": "git clone https://github.com/acme/widget\nacme-widget-not-used",
+    "detail": "Download the source.",
+    "order": 10,
+    "revision": 1
+   },
+   {
+    "id": "dependencies",
+    "key": "dependencies",
+    "title": "Install project dependencies",
+    "command": "npm install",
+    "detail": "Install declared libraries.",
+    "order": 25,
+    "revision": 1,
+    "patchedFor": [
+     "network-tls"
+    ],
+    "guard": "Seen in 3 reported threads: registry unreachable."
+   },
+   {
+    "id": "env",
+    "key": "env",
+    "title": "Create your environment file",
+    "command": "cp .env.example .env",
+    "detail": "Start from the template.",
+    "order": 35,
+    "revision": 1
+   },
+   {
+    "id": "run",
+    "key": "run",
+    "title": "Start the development server",
+    "command": "npm run dev",
+    "detail": "Launch locally.",
+    "order": 65,
+    "revision": 1,
+    "verify": "curl -sS -o /dev/null -w \"%{http_code}\" http://localhost:3000"
+   }
+  ],
+  "notes": [
+   "Review project-specific notes in the README before using it in production.",
+   "GitHub rate limit reached; a lightweight scan was used."
+  ],
+  "plainOverview": {
+   "analogy": "like a recipe box",
+   "problem": "it saves setup time",
+   "audience": "students and shop owners",
+   "howItWorks": [
+    "pick a recipe",
+    "gather the items",
+    "cook it"
+   ]
+  }
+ },
+ "expertiseOptions": [
+  {
+   "id": "novice",
+   "label": "I know nothing about this project",
+   "short": "New here",
+   "detail": "x",
+   "explanation": "full",
+   "warnings": "all",
+   "tempo": "one action at a time"
+  },
+  {
+   "id": "some",
+   "label": "I\u2019ve used similar tools before",
+   "short": "Some experience",
+   "detail": "y",
+   "explanation": "normal",
+   "warnings": "relevant",
+   "tempo": "a normal terminal session"
+  },
+  {
+   "id": "expert",
+   "label": "expert",
+   "short": "Expert",
+   "detail": "z",
+   "explanation": "minimal",
+   "warnings": "critical",
+   "tempo": "fastest"
+  }
+ ]
+}

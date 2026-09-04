@@ -1,5 +1,7 @@
 import { composeSteps, keyOf, progressOf, applyRevision, revisionEntry, selectionsLabel, EXPERTISE_LEVELS, tuneGuide } from './path-engine.js';
-import { bindSpotlight, bindTickers } from './magic.js';
+import { bindSpotlight, bindTickers, bindLenis, bindReveals } from './magic.js';
+import { initParticles } from './particles-workspace.js';
+import { initTopbarContributions } from './topbar-contributions.js';
 
 const root = document.querySelector('#app');
 
@@ -12,6 +14,7 @@ const icons = {
   clock: '<circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 7v5l3.2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
   external: '<path d="M14 5h5v5M19 5l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 13.5V18a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
   arrow: '<path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
+  search: '<circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m16 16 4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
   check: '<path d="m5 12 4.2 4.2L19 6.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
   copy: '<rect x="8" y="8" width="10" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.5"/>',
   close: '<path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
@@ -120,6 +123,8 @@ const state = {
   treeFilter: '',
   // Daylight / dark mode
   theme: savedTheme,
+  // Analysis progress
+  progress: { phase: '', label: '', percent: 0, error: '' },
 };
 
 function hasAiConfig() { return Boolean(state.settings.baseUrl && state.settings.apiKey && state.settings.model); }
@@ -147,13 +152,18 @@ function topbar() {
   const aiReady = hasAiConfig();
   const toLight = state.theme !== 'light';
   return `<header class="topbar">
+    <div id="topbar-contrib" aria-hidden="true"></div>
     <a class="brand" href="#" data-action="new-analysis" aria-label="Git-Up home">
-      <span class="brand-mark">${icon('mark', 19)}</span><span class="brand-word">git-<em>up</em></span>
+      <span class="brand-logo">
+        <img class="brand-img brand-img--dark" src="/assets/logo/icon_Dark_mode.png" alt="" width="56" height="56" fetchpriority="high" decoding="async" />
+        <img class="brand-img brand-img--light" src="/assets/logo/icon_light_mode.png" alt="" width="56" height="56" fetchpriority="high" decoding="async" />
+      </span><span class="brand-word">git-<em>up</em></span>
       <span class="brand-sub">living install paths</span>
     </a>
     <div class="topbar-center"><span>Route</span><span class="slash">/</span><strong>${state.mode === 'analysis' ? esc(displayName({ label: '', name: shortName(state.guide) })) : 'New analysis'}</strong></div>
     <div class="topbar-actions">
       <div class="connection-pill"><i class="status-dot ${aiReady ? 'online' : ''}"></i><span>${aiReady ? 'AI connected' : 'Local scan ready'}</span></div>
+      <button class="icon-button" data-action="palette" aria-label="Open command menu (Ctrl K)" title="Command menu (Ctrl K)">${icon('search', 18)}</button>
       <button class="icon-button" data-action="theme" aria-label="${toLight ? 'Switch to daylight mode' : 'Switch to dark mode'}" title="${toLight ? 'Daylight mode' : 'Dark mode'}">${icon(toLight ? 'sun' : 'moon', 18)}</button>
       <button class="icon-button" data-action="settings" aria-label="Open AI settings" title="AI settings">${icon('settings', 18)}</button>
     </div>
@@ -289,7 +299,7 @@ function emptyView() {
     <p class="hero-copy">Git-Up builds a living install path from repository evidence, and helps you recover when a step fails. Paste a public GitHub URL to begin.</p>
     ${repoForm()}
   </section>
-  <section class="initial-content" aria-labelledby="how-it-works">
+  <section class="initial-content" aria-labelledby="how-it-works" data-reveal-stagger>
     <div class="section-kicker" id="how-it-works">How Git-Up works</div>
     <ol class="route-preview">
       <li class="route-stop"><span class="route-mile">01</span><div><h3>Read the setup surface</h3><p>Manifests, lockfiles, Docker configs, README instructions, and environment hints.</p></div></li>
@@ -301,15 +311,41 @@ function emptyView() {
 }
 
 function loadingView() {
-  return `<section class="loading-view" aria-live="polite" aria-busy="true"><div class="loading-top"><div class="loading-orb">${icon('route', 18)}</div><div><h2>Reading the repository surface</h2><p>Following the real pipeline in order. No percentages are shown because none are measured.</p></div></div>
-  <ol class="scan-phases">
-    <li>Repository read<span>metadata, branches, tree</span></li>
-    <li>Setup-file scan<span>manifests, lockfiles, env templates</span></li>
-    <li>Failure evidence<span>issues, PRs, inferred risks</span></li>
-    <li>Path composition<span>branches recomposed locally</span></li>
-    <li>Contract assembly<span>versions, permissions, verification</span></li>
-  </ol>
-  <div class="skeleton-grid" aria-hidden="true"><div class="skeleton-panel"><div class="skeleton-line short"></div><div class="skeleton-line wide"></div><div class="skeleton-line mid"></div><div class="skeleton-line"></div><div class="skeleton-line mid"></div><div class="skeleton-line"></div></div><div class="skeleton-panel"><div class="skeleton-line short"></div><div class="skeleton-line wide"></div><div class="skeleton-line"></div><div class="skeleton-line mid"></div><div class="skeleton-line"></div></div></div></section>`;
+  const p = state.progress;
+  const phases = [
+    { id: 'repository', label: 'Repository read', sub: 'metadata, branches, tree' },
+    { id: 'files', label: 'Setup-file scan', sub: 'manifests, lockfiles, env templates' },
+    { id: 'ai', label: 'AI review', sub: 'heuristic guide' },
+    { id: 'failures', label: 'Failure evidence', sub: 'issues, PRs, inferred risks' },
+    { id: 'health', label: 'Health score', sub: 'CI signals, repo health' },
+    { id: 'path', label: 'Path composition', sub: 'branches recomposed locally' },
+    { id: 'contract', label: 'Contract assembly', sub: 'versions, permissions, verification' },
+    { id: 'tuning', label: 'Expertise tuning', sub: 'tailored depth and warnings' },
+  ];
+  const currentIdx = phases.findIndex((ph) => ph.id === p.phase && p.phase !== 'done');
+  const activePhase = currentIdx >= 0 ? phases[currentIdx] : phases[phases.length - 1];
+  const pct = p.percent || 0;
+  const phaseItems = phases.map((ph, i) => {
+    const isActive = p.phase === 'done' ? i < phases.length : i <= currentIdx;
+    const isCurrent = i === currentIdx && p.phase !== 'done';
+    return `<li class="phase-item ${isActive ? 'done' : ''} ${isCurrent ? 'active' : ''}"><span class="phase-dot"></span><div><strong>${ph.label}</strong><span>${ph.sub}</span></div></li>`;
+  }).join('');
+  const isDone = p.phase === 'done';
+  return `<section class="loading-view" aria-live="polite" aria-busy="${!isDone}">
+    <div class="loading-top">
+      <div class="loading-orb">${isDone ? icon('check', 18) : icon('route', 18)}</div>
+      <div>
+        <h2>${isDone ? 'Analysis complete' : 'Reading the repository surface'}</h2>
+        <p>${isDone ? 'Composing your install path.' : esc(p.label || 'Following the real pipeline in order.')}</p>
+      </div>
+    </div>
+    <div class="progress-bar-wrap" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Analysis progress">
+      <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+      <span class="progress-pct">${pct}%</span>
+    </div>
+    <ol class="scan-phases">${phaseItems}</ol>
+    ${p.error ? `<div class="progress-error">${esc(p.error)}</div>` : ''}
+    <div class="skeleton-grid" aria-hidden="true"><div class="skeleton-panel"><div class="skeleton-line short"></div><div class="skeleton-line wide"></div><div class="skeleton-line mid"></div><div class="skeleton-line"></div><div class="skeleton-line mid"></div><div class="skeleton-line"></div></div><div class="skeleton-panel"><div class="skeleton-line short"></div><div class="skeleton-line wide"></div><div class="skeleton-line"></div><div class="skeleton-line mid"></div><div class="skeleton-line"></div></div></div></section>`;
 }
 
 function dependencyList(items) {
@@ -365,7 +401,7 @@ function plainOverviewPanel() {
   const overview = state.guide?.plainOverview;
   if (!overview) return '';
   const steps = Array.isArray(overview.howItWorks) ? overview.howItWorks : [];
-  return `<section class="panel plain-panel" aria-labelledby="plain-title">
+  return `<section class="panel plain-panel" aria-labelledby="plain-title" data-reveal>
     <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('chat', 15)}</div><div><h3 id="plain-title">In plain English</h3><p class="panel-subtitle">No jargon — share this with anyone, even if they have never opened a project before</p></div></div><span class="panel-count">for everyone</span></div>
     <div class="plain-body">
       <div class="plain-analogy">${icon('spark', 14)}<span>${esc(overview.analogy || '')}</span></div>
@@ -413,7 +449,7 @@ function explorerSection() {
     </article>`;
   }
   const guideFollowUps = state.guide?.followUps || [];
-  return `<section class="panel explorer-panel" aria-labelledby="explorer-title">
+  return `<section class="panel explorer-panel" aria-labelledby="explorer-title" data-reveal>
     <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('spark', 15)}</div><div><h3 id="explorer-title">Curious Explorer</h3><p class="panel-subtitle">One click, three specialist lenses — works instantly, deeper with AI connected. Never part of the install path.</p></div></div></div>
     <div class="explorer-body"><div class="explorer-grid">${buttons}</div>
     <form class="insight-custom" id="insight-custom"><label for="insight-question">Ask your own question about this repository</label><div class="insight-custom-row"><input class="text-field" id="insight-question" value="${esc(state.insightQuestion)}" placeholder="For example: does this need a database?" maxlength="2000" autocomplete="off" /><select class="select-field" id="insight-base" aria-label="Answer lens"><option value="recommendations" ${state.insightBase === 'recommendations' ? 'selected' : ''}>Recommendations lens</option><option value="features" ${state.insightBase === 'features' ? 'selected' : ''}>Features lens</option><option value="bugs" ${state.insightBase === 'bugs' ? 'selected' : ''}>Bugs lens</option></select><button class="secondary-button" type="submit" ${loading ? 'disabled' : ''}>Ask</button></div></form>
@@ -474,10 +510,10 @@ function analysisView() {
     ${failureFirstPanel()}
     ${contractPanel()}
     ${revisionTrail()}
-    <div class="overview-strip"><div class="overview-cell"><div class="cell-label">Analysis summary</div><div class="cell-value overview-summary">${esc(guide.summary || 'A structured installation path for this repository.')}</div></div><div class="overview-cell"><div class="cell-label">Default branch</div><div class="cell-value mono">${esc(repo.defaultBranch || 'main')}</div></div><div class="overview-cell"><div class="cell-label">Language</div><div class="cell-value">${esc(repo.language || 'Not detected')}</div></div><div class="overview-cell"><div class="cell-label">Files inspected</div><div class="cell-value mono">${(guide.files || []).length}</div></div></div>
+    <div class="overview-strip" data-reveal><div class="overview-cell summary"><div class="cell-label">Analysis summary</div><div class="cell-value overview-summary">${esc(guide.summary || 'A structured installation path for this repository.')}</div></div><div class="overview-cell branch"><div class="cell-label">Default branch</div><div class="cell-value mono">${esc(repo.defaultBranch || 'main')}</div></div><div class="overview-cell language"><div class="cell-label">Language</div><div class="cell-value">${esc(repo.language || 'Not detected')}</div></div><div class="overview-cell files"><div class="cell-label">Files inspected</div><div class="cell-value mono">${(guide.files || []).length}</div></div></div>
     ${plainOverviewPanel()}
     ${explorerSection()}
-    <div class="dashboard-grid" id="route-evidence">
+    <div class="dashboard-grid" id="route-evidence" data-reveal>
       <div class="primary-stack">
         <div class="info-grid"><section class="panel info-panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('layers', 15)}</div><div><h3>Dependencies</h3><p class="panel-subtitle">Installed as part of this repository</p></div></div><span class="panel-count">${guide.dependencies?.length || 0}</span></div><div class="info-list">${dependencyList(guide.dependencies)}</div></section><section class="panel info-panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('key', 15)}</div><div><h3>Requirements</h3><p class="panel-subtitle">Needed before the app can work</p></div></div><span class="panel-count">${guide.requirements?.length || 0}</span></div><div class="info-list">${requirementsList(guide.requirements)}</div></section></div>
         ${guide.notes?.length ? `<section class="panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('book', 15)}</div><div><h3>Notes from the scan</h3><p class="panel-subtitle">Keep these caveats close while you set up</p></div></div></div><div class="info-list">${guide.notes.map((note) => `<div class="info-item"><span class="info-bullet"></span><span>${esc(note)}</span></div>`).join('')}</div></section>` : ''}
@@ -629,7 +665,7 @@ function healthPanel() {
       <p>${esc(factor.detail)}</p>
     </div>`).join('');
   const evidence = health.evidence || {};
-  return `<section class="panel health-panel" aria-labelledby="health-title">
+  return `<section class="panel health-panel" aria-labelledby="health-title" data-reveal>
     <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('shield', 15)}</div><div><h3 id="health-title">Install health</h3><p class="panel-subtitle">Scored from repository evidence before any steps are shown — ${esc(health.method)}</p></div></div><span class="panel-count">weight disclosed</span></div>
     <div class="health-body">
       <div class="health-score">${scoreRing(health.score, health.band.tone)}<div class="health-band tone-${health.band.tone}"><strong>${esc(health.band.label)}</strong><span>${esc(health.band.note)}</span></div></div>
@@ -648,6 +684,21 @@ function bandTone(score) {
 }
 
 // --- Feature 2: failure-first analysis -------------------------------------
+/** A quiet, professional signature strip. CSS-only marquee when there are
+    enough signatures to loop; a static chip row below that threshold. Purely
+    a preview — the ranked fail-list underneath is the accessible source. */
+function signatureStrip(patterns) {
+  const labels = patterns.filter((pattern) => pattern.label).slice(0, 8);
+  if (labels.length < 2) return '';
+  const chip = (pattern) => `<span class="sig-chip"><span class="sig-rank">${String(pattern.rank).padStart(2, '0')}</span>${esc(pattern.label)}${pattern.count ? `<em>· ${pattern.count}</em>` : ''}</span>`;
+  if (labels.length < 3) {
+    return `<div class="sig-marquee sig-static" aria-hidden="true"><div class="sig-marquee-group">${labels.map(chip).join('')}</div></div>`;
+  }
+  const group = `<div class="sig-marquee-group">${labels.map(chip).join('')}</div>`;
+  const text = labels.map((pattern) => `${String(pattern.rank).padStart(2, '0')} ${pattern.label}`).join('; ');
+  return `<div class="sig-marquee" aria-hidden="true"><div class="sig-marquee-track">${group}${group}</div></div><span class="sr-only">${esc(text)}</span>`;
+}
+
 function failureFirstPanel() {
   const scan = state.guide?.failureScan;
   if (!scan) return '';
@@ -668,9 +719,10 @@ function failureFirstPanel() {
       <div class="fail-patch">${targetIndex >= 0 ? `<span class="patched">${icon('check', 12)}pre-empted in step ${String(targetIndex + 1).padStart(2, '0')}</span>` : '<span class="unpatched">listed after the run step</span>'}${pattern.origin === 'reported' ? `<button class="link-button" data-action="ask-failure" data-failure="${esc(pattern.id)}">Ask about this${hasAiConfig() ? '' : ' (local)'}</button>` : ''}</div>
     </article>`;
   }).join('');
-  return `<section class="panel fail-panel" id="route-failures" aria-labelledby="fail-title">
+  return `<section class="panel fail-panel" id="route-failures" aria-labelledby="fail-title" data-reveal>
     <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('warning', 15)}</div><div><h3 id="fail-title">How this install usually breaks</h3><p class="panel-subtitle">Read before the steps — ranked by what ${esc(scan.totalThreads || 0)} recent ${scan.totalThreads === 1 ? 'thread' : 'threads'} actually say</p></div></div><span class="panel-count">${patterns.length} found</span></div>
-    ${patterns.length ? `<div class="fail-list">${rows}</div>` : `<div class="fail-empty">${icon('check', 15)}<span>${esc(scan.notice || 'No installation failures were found in the recent threads.')}</span></div>`}
+    ${signatureStrip(patterns)}
+    ${patterns.length ? `<div class="fail-list" data-reveal-stagger>${rows}</div>` : `<div class="fail-empty">${icon('check', 15)}<span>${esc(scan.notice || 'No installation failures were found in the recent threads.')}</span></div>`}
     <div class="fail-foot"><span>sampled ${scan.sampled?.issues || 0} issues · ${scan.sampled?.pulls || 0} pull requests${scan.sampled?.discussions ? ` · ${scan.sampled.discussions} discussions` : ''}</span>${scan.sources?.discussions === 'none' ? '<span>discussions need a server GitHub token (GraphQL only)</span>' : ''}</div>
     ${scan.notice ? `<p class="field-hint fail-notice">${esc(scan.notice)}</p>` : ''}
   </section>`;
@@ -742,7 +794,7 @@ function pathGraphPanel() {
   const steps = activePath();
   const pills = steps.map((entry, index) => `<span class="path-pill ${state.checked[keyOf(entry)] ? 'done' : ''}">${String(index + 1).padStart(2, '0')} ${esc(entry.title)}</span>`).join('');
   const label = selectionsLabel(graph.axes, state.pathSelections);
-  return `<section class="panel graph-panel" id="route-graph" aria-labelledby="graph-title">
+  return `<section class="panel graph-panel" id="route-graph" aria-labelledby="graph-title" data-reveal>
     <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('grid', 15)}</div><div><h3 id="graph-title">Choose your path</h3><p class="panel-subtitle">${esc(graph.note || 'Pick a branch — only the relevant steps stay in the checklist.')}</p></div></div>${label ? `<span class="panel-count path-selection">${esc(label)}</span>` : ''}</div>
     ${graphSvg(graph.axes, state.pathSelections, steps.length)}
     ${graphAltSelects(graph)}
@@ -816,9 +868,9 @@ function installStepsPanel() {
     </article>`;
   }).join('');
   const hidden = state.guide?.hiddenNotes || 0;
-  return `<section class="panel steps-panel" id="route-path" aria-labelledby="steps-title">
+  return `<section class="panel steps-panel" id="route-path" aria-labelledby="steps-title" data-reveal>
     <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('route', 15)}</div><div><h3 id="steps-title">Installation steps</h3><p class="panel-subtitle">A live path — it changes when something fails${revision > 1 ? `, now on revision ${revision}` : ''}</p></div></div><span class="panel-count">${done}/${total} complete</span></div>
-    <div class="install-list">${rows || '<div class="fail-empty"><span>No steps were produced for this path. Try another branch of the graph.</span></div>'}</div>
+    <div class="install-list" data-reveal-stagger>${rows || '<div class="fail-empty"><span>No steps were produced for this path. Try another branch of the graph.</span></div>'}</div>
     <div class="install-progress"><div class="progress-copy"><span>${percent === 100 ? 'Installation path complete — tick the contract to close it out' : 'Progress through your installation path'}</span><strong>${percent}%</strong></div><div class="progress-track"><div class="progress-fill" style="width:${percent}%"></div></div></div>
     <div class="steps-foot">
       <span class="tempo-note">${icon('compass', 12)}${esc(profile.short)} · ${esc(profile.explanation === 'minimal' ? 'prose hidden, one copy-paste block available' : profile.explanation === 'full' ? 'every step explains why it exists' : 'one line of reasoning per step')}</span>
@@ -966,7 +1018,7 @@ function contractPanel() {
   const ticked = items.filter((item) => state.contractChecked[item.id]).length;
   const riskTone = { high: 'red', medium: 'amber', low: 'mint' };
   const section = (title, body) => `<div class="contract-section"><h4>${esc(title)}</h4>${body}</div>`;
-  return `<section class="panel contract-panel" id="route-contract" aria-labelledby="contract-title">
+  return `<section class="panel contract-panel" id="route-contract" aria-labelledby="contract-title" data-reveal>
     <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('shield', 15)}</div><div><h3 id="contract-title">Install contract</h3><p class="panel-subtitle">What this path assumes, changes, and requires — check it off when the app is running</p></div></div><span class="panel-count">${ticked}/${items.length} verified</span></div>
     <div class="contract-meta">
       <span class="mono contract-id">${esc(contract.contractId)}</span>
@@ -1007,7 +1059,7 @@ function closeModal() {
   state.modal = null;
   render();
   if (state.lastFocusId) {
-    const target = document.querySelector(`[data-action="${state.lastFocusId}"]`) || document.querySelector('#repo-input');
+    const target = document.querySelector(`[data-action="${state.lastFocusId}"]`) || (state.mode === 'analysis' ? null : document.querySelector('#repo-input'));
     target?.focus?.();
     state.lastFocusId = '';
   }
@@ -1038,20 +1090,152 @@ function mobileBottomNav() {
     { id: 'nav-route', label: 'Route', icon: 'route', action: 'scroll-path', show: isAnalysis },
     { id: 'nav-graph', label: 'Graph', icon: 'grid', action: 'scroll-graph', show: isAnalysis },
     { id: 'nav-contract', label: 'Contract', icon: 'shield', action: 'scroll-contract', show: isAnalysis },
+    { id: 'nav-palette', label: 'Menu', icon: 'search', action: 'palette', show: true },
     { id: 'nav-settings', label: 'AI', icon: 'settings', action: 'settings', show: true },
   ];
   const visible = items.filter((item) => item.show);
   return `<nav class="mobile-nav" aria-label="Mobile sections">${visible.map((item) => `<button class="mobile-nav-item" data-action="${item.action}" aria-label="${item.label}">${icon(item.icon, 18)}<span>${item.label}</span></button>`).join('')}</nav>`;
 }
 
+// --- Command palette (Ctrl/Cmd+K) -------------------------------------------
+// MagicUI command-menu port: keyboard-first navigation and actions. Replaces a
+// decorative dock — in a tool like this, quick keyboard access is the useful
+// version of "floating navigation".
+function paletteActions() {
+  const analysis = state.mode === 'analysis' && state.guide;
+  const scroll = (id) => () => { closeModal(); document.querySelector(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  const actions = [
+    { id: 'new-analysis', label: 'Start a new analysis', icon: 'plus', group: 'Actions', run: () => { closeModal(); newAnalysis(); } },
+  ];
+  if (analysis) {
+    actions.push(
+      { id: 'go-path', label: 'Go to installation steps', icon: 'route', group: 'Sections', hint: '1', run: scroll('#route-path') },
+      { id: 'go-failures', label: 'Go to failure evidence', icon: 'warning', group: 'Sections', hint: '2', run: scroll('#route-failures') },
+      { id: 'go-graph', label: 'Go to path graph', icon: 'grid', group: 'Sections', hint: '3', run: scroll('#route-graph') },
+      { id: 'go-contract', label: 'Go to install contract', icon: 'shield', group: 'Sections', hint: '4', run: scroll('#route-contract') },
+      { id: 'go-evidence', label: 'Go to files and evidence', icon: 'book', group: 'Sections', hint: '5', run: scroll('#route-evidence') },
+      { id: 'install', label: 'Generate install script', icon: 'terminal', group: 'Actions', run: () => { closeModal(); state.lastFocusId = 'install'; state.modal = 'install'; render(); } },
+    );
+  }
+  actions.push(
+    { id: 'settings', label: 'AI provider settings', icon: 'settings', group: 'Actions', run: () => { closeModal(); state.lastFocusId = 'settings'; state.modal = 'settings'; render(); setTimeout(() => document.querySelector('#base-url')?.focus(), 30); } },
+    { id: 'theme', label: state.theme === 'light' ? 'Switch to dark mode' : 'Switch to daylight mode', icon: state.theme === 'light' ? 'moon' : 'sun', group: 'Actions', run: () => {
+      state.theme = state.theme === 'light' ? 'dark' : 'light';
+      try { localStorage.setItem('git-up-theme', state.theme); } catch { /* ignore */ }
+      closeModal();
+    } },
+  );
+  const recent = state.history.slice(0, 4).map((entry) => ({
+    id: `history-${entry.id}`,
+    label: displayName(entry),
+    icon: 'clock',
+    group: 'Recent repositories',
+    run: () => { closeModal(); restoreHistory(entry.id); },
+  }));
+  return [...actions, ...recent];
+}
+
+function filteredPaletteActions() {
+  const query = state.palette.query.trim().toLowerCase();
+  const all = paletteActions();
+  if (!query) return all;
+  return all.filter((action) => `${action.label} ${action.group || ''}`.toLowerCase().includes(query));
+}
+
+function paletteModal() {
+  const actions = filteredPaletteActions();
+  const index = Math.max(0, Math.min(state.palette.index, actions.length - 1));
+  const active = actions[index];
+  const option = (action, position) => `
+    <button class="palette-option ${position === index ? 'active' : ''}" id="palette-opt-${esc(action.id)}" role="option" aria-selected="${position === index}" data-palette-id="${esc(action.id)}">
+      <span class="palette-ic">${icon(action.icon, 15)}</span><span>${esc(action.label)}</span>
+      ${action.hint ? `<span class="palette-hint">${esc(action.hint)}</span>` : ''}
+    </button>`;
+  let listHtml = '';
+  if (!actions.length) {
+    listHtml = '<div class="palette-empty">Nothing matches. Try a section name, "settings", or "install".</div>';
+  } else if (state.palette.query.trim()) {
+    listHtml = actions.map((action, position) => option(action, position)).join('');
+  } else {
+    let lastGroup = '';
+    actions.forEach((action, position) => {
+      if (action.group !== lastGroup) {
+        lastGroup = action.group;
+        listHtml += `<div class="palette-group-label" role="presentation">${esc(action.group)}</div>`;
+      }
+      listHtml += option(action, position);
+    });
+  }
+  return `<div class="modal-layer" data-action="close-on-backdrop">
+    <section class="modal palette-modal" role="dialog" aria-modal="true" aria-label="Command menu">
+      <div class="palette-input-wrap">${icon('search', 16)}<input id="palette-input" class="palette-input" role="combobox" aria-expanded="${actions.length ? 'true' : 'false'}" aria-controls="palette-list" aria-activedescendant="${active ? `palette-opt-${esc(active.id)}` : ''}" placeholder="Type a command, section, or repository…" value="${esc(state.palette.query)}" autocomplete="off" spellcheck="false" /></div>
+      <div class="palette-list" id="palette-list" role="listbox" aria-label="Commands">${listHtml}</div>
+      <div class="palette-foot"><span><kbd class="palette-key">↑↓</kbd> navigate</span><span><kbd class="palette-key">↵</kbd> run</span><span><kbd class="palette-key">esc</kbd> close</span><span><kbd class="palette-key">ctrl k</kbd> toggle</span></div>
+    </section>
+  </div>`;
+}
+
+function runPaletteAction(id) {
+  const action = paletteActions().find((entry) => entry.id === id);
+  if (!action) return;
+  action.run();
+}
+
+function movePaletteIndex(delta) {
+  const count = filteredPaletteActions().length;
+  if (!count) return;
+  state.palette.index = (state.palette.index + delta + count) % count;
+  render();
+}
+
+function togglePalette() {
+  if (state.modal === 'palette') { closeModal(); return; }
+  state.palette = { query: '', index: 0 };
+  state.lastFocusId = '';
+  state.modal = 'palette';
+  render();
+}
+
 function render() {
+  // A new major view re-arms the scroll reveal; renders within one view are
+  // sealed by bindReveals so checkbox ticks and branch switches never flicker.
+  try {
+    if (document.documentElement && render.lastMode !== state.mode) {
+      document.documentElement.classList.remove('reveal-done');
+      render.lastMode = state.mode;
+    }
+  } catch { /* ignore */ }
   let content = '';
-  if (state.mode === 'loading') content = `<main class="main" id="main-content">${repoForm()}${loadingView()}</main>`;
-  else if (state.mode === 'analysis' && state.guide) content = `<main class="main" id="main-content">${repoForm()}${analysisView()}</main>`;
-  else content = `<main class="main" id="main-content">${emptyView()}</main>`;
+  // The particle host lives ONLY inside <main>: navbar, sidebar, modals,
+  // toasts and the mobile nav are sibling layers and stay clean. .main-inner
+  // paints above the canvas (z-index 1) so every control stays interactive.
+  // The particles.js engine initializes into #particles-workspace exactly
+  // once (see initParticles); render() preserves the live node below.
+  const workspace = (inner) => `<main class="main" id="main-content"><div id="particles-workspace" aria-hidden="true"></div><div class="main-inner">${inner}</div></main>`;
+  if (state.mode === 'loading') content = workspace(`${repoForm()}${loadingView()}`);
+  else if (state.mode === 'analysis' && state.guide) content = workspace(`${repoForm()}${analysisView()}`);
+  else content = workspace(`${emptyView()}`);
   const mobileNav = state.mode !== 'loading' ? mobileBottomNav() : '';
   try { if (typeof document !== 'undefined' && document.documentElement) document.documentElement.setAttribute('data-theme', state.theme === 'light' ? 'light' : 'dark'); } catch { /* ignore */ }
-  root.innerHTML = `<div class="app-shell">${topbar()}<div class="layout">${sidebar()}${content}</div>${mobileNav}${state.modal === 'settings' ? settingsModal() : ''}${state.modal === 'install' ? installModal() : ''}${state.modal === 'failure' ? failureModal() : ''}${toastHtml()}<div class="sr-only" aria-live="polite">${esc(liveSummary())}</div></div>`;
+  // Preserve the live particle nodes across innerHTML rebuilds so the engines
+  // keep their single canvas + rAF loops instead of re-initializing.
+  let liveField = null;
+  let liveTopbar = null;
+  try {
+    if (typeof document !== 'undefined' && document.querySelector) {
+      liveField = document.querySelector('#particles-workspace');
+      liveTopbar = document.querySelector('#topbar-contrib');
+    }
+  } catch { liveField = null; liveTopbar = null; }
+  root.innerHTML = `<div class="app-shell">${topbar()}<div class="layout">${sidebar()}${content}</div>${mobileNav}${state.modal === 'settings' ? settingsModal() : ''}${state.modal === 'install' ? installModal() : ''}${state.modal === 'failure' ? failureModal() : ''}${state.modal === 'palette' ? paletteModal() : ''}${toastHtml()}<div class="sr-only" aria-live="polite">${esc(liveSummary())}</div></div>`;
+  try {
+    if (typeof document !== 'undefined' && document.querySelector) {
+      const freshField = document.querySelector('#particles-workspace');
+      if (liveField && freshField && freshField !== liveField && liveField.querySelector('.particles-js-canvas-el')) freshField.replaceWith(liveField);
+      const freshTopbar = document.querySelector('#topbar-contrib');
+      if (liveTopbar && freshTopbar && freshTopbar !== liveTopbar && liveTopbar.querySelector('canvas')) freshTopbar.replaceWith(liveTopbar);
+    }
+  } catch { /* ignore */ }
   bindEvents();
   if (state.modal) trapFocus();
 }
@@ -1076,6 +1260,7 @@ async function analyze() {
   const input = document.querySelector('#repo-input');
   state.repoUrl = input?.value.trim() || state.repoUrl.trim();
   state.error = '';
+  state.progress = { phase: '', label: '', percent: 0, error: '' };
   if (!state.repoUrl) { state.error = 'Paste a GitHub repository URL to begin.'; render(); return; }
   state.mode = 'loading';
   state.guide = null;
@@ -1084,28 +1269,106 @@ async function analyze() {
   state.openMenuId = null;
   state.renamingId = null;
   render();
-  try {
-    const config = hasAiConfig() ? { ...state.settings } : null;
-    const response = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repoUrl: state.repoUrl, expertise: state.expertise, config }) });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) throw new Error(payload.error || 'The repository could not be analyzed.');
-    state.guide = payload.guide;
+
+  const finish = (guide) => {
+    state.progress = { phase: '', label: '', percent: 0, error: '' };
+    state.guide = guide;
     state.mode = 'analysis';
     emptySession();
-    state.pathSelections = { ...(state.guide.pathGraph?.defaults || {}) };
+    state.pathSelections = { ...(guide.pathGraph?.defaults || {}) };
     state.recovery = null;
     state.explanationIndex = 0;
     state.expandedDirs = {};
     state.treeFilter = '';
-    const historyEntry = { id: uid(), url: state.repoUrl, name: shortName(state.guide), label: '', analyzedAt: state.guide.analyzedAt, guide: state.guide, session: sessionSnapshot() };
+    const historyEntry = { id: uid(), url: state.repoUrl, name: shortName(guide), label: '', analyzedAt: guide.analyzedAt, guide, session: sessionSnapshot() };
     state.history = [historyEntry, ...state.history.filter((entry) => entry.url !== state.repoUrl)].slice(0, 20);
     persistHistory();
     render();
-  } catch (error) {
+  };
+
+  const fail = (error) => {
     state.mode = 'empty';
-    state.error = error.message || 'Analysis failed. Check the URL and try again.';
+    state.progress = { phase: '', label: '', percent: 0, error: '' };
+    state.error = error?.message || 'Analysis failed. Check the URL and try again.';
     render();
+  };
+
+  try {
+    const config = hasAiConfig() ? { ...state.settings } : null;
+    const body = JSON.stringify({ repoUrl: state.repoUrl, expertise: state.expertise, config });
+
+    let guide = null;
+    try {
+      guide = await analyzeWithStream(body);
+    } catch {
+      guide = await analyzeWithPoll(body);
+    }
+
+    if (!guide) throw new Error('The repository could not be analyzed.');
+    finish(guide);
+  } catch (error) {
+    fail(error);
   }
+}
+
+async function analyzeWithStream(body) {
+  const response = await fetch('/api/analyze-stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+  if (!response.ok) throw new Error(`Stream endpoint returned ${response.status}`);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const raw = line.slice(6).trim();
+      if (!raw) continue;
+      try {
+        const msg = JSON.parse(raw);
+        if (msg.phase === 'error') throw new Error(msg.error || 'Stream reported an error.');
+        if (msg.phase === 'result') {
+          state.progress = { phase: 'done', label: msg.label || 'Analysis complete', percent: 100, error: '' };
+          render();
+          return msg.guide;
+        }
+        state.progress = { phase: msg.phase, label: msg.label || '', percent: Number(msg.percent) || 0, error: '' };
+        render();
+      } catch (parseError) {
+        if (parseError instanceof SyntaxError) continue;
+        throw parseError;
+      }
+    }
+  }
+  throw new Error('Stream ended without a result.');
+}
+
+async function analyzeWithPoll(body) {
+  const fallbackPhases = [
+    { phase: 'repository', label: 'Reading repository metadata…', percent: 10 },
+    { phase: 'files', label: 'Scanning setup files…', percent: 25 },
+    { phase: 'ai', label: hasAiConfig() ? 'Reviewing with AI…' : 'Building local guide…', percent: 45 },
+    { phase: 'failures', label: 'Checking failure history…', percent: 55 },
+    { phase: 'health', label: 'Computing health score…', percent: 65 },
+    { phase: 'path', label: 'Composing install path…', percent: 78 },
+    { phase: 'contract', label: 'Building install contract…', percent: 90 },
+    { phase: 'tuning', label: 'Tuning for your level…', percent: 95 },
+  ];
+  for (const p of fallbackPhases) {
+    state.progress = p;
+    render();
+    await new Promise((r) => setTimeout(r, 350));
+  }
+  const response = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+  const payload = await response.json();
+  if (!response.ok || !payload.ok) throw new Error(payload.error || 'The repository could not be analyzed.');
+  state.progress = { phase: 'done', label: 'Analysis complete', percent: 100, error: '' };
+  render();
+  return payload.guide;
 }
 
 async function runInsight(mode, question = '', baseMode = '') {
@@ -1320,9 +1583,34 @@ function bindEvents() {
   document.querySelectorAll('[data-action="scroll-path"]').forEach((el) => el.addEventListener('click', () => { document.querySelector('#route-path')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
   document.querySelectorAll('[data-action="scroll-graph"]').forEach((el) => el.addEventListener('click', () => { document.querySelector('#route-graph')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
   document.querySelectorAll('[data-action="scroll-contract"]').forEach((el) => el.addEventListener('click', () => { document.querySelector('#route-contract')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
-  // Magic UI ports: cursor spotlight on cards, count-up tickers (re-bind each render).
+  // Command palette: open, type-to-filter, arrow/Enter to run.
+  document.querySelectorAll('[data-action="palette"]').forEach((el) => el.addEventListener('click', togglePalette));
+  document.querySelectorAll('.palette-option').forEach((el) => el.addEventListener('click', () => runPaletteAction(el.dataset.paletteId)));
+  document.querySelector('#palette-input')?.addEventListener('input', (event) => {
+    state.palette = { query: event.target.value, index: 0 };
+    render();
+  });
+  document.querySelector('#palette-input')?.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown') { event.preventDefault(); movePaletteIndex(1); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); movePaletteIndex(-1); }
+    else if (event.key === 'Enter') {
+      event.preventDefault();
+      const actions = filteredPaletteActions();
+      const action = actions[Math.min(state.palette.index, actions.length - 1)];
+      if (action) action.run();
+    }
+  });
+  // Magic UI ports: cursor spotlight on cards, count-up tickers, scroll reveal (re-bind each render).
   bindSpotlight(document);
   bindTickers(document);
+  bindReveals(document);
+  bindLenis();
+  // Workspace particle field (particles.js engine): initializes exactly once
+  // into <main>'s host div, behind .main-inner. No-op on repeat renders.
+  initParticles();
+  // Top bar GitHub-activity contribution squares: header only, behind brand +
+  // controls. Initializes exactly once; no-op on repeat renders.
+  initTopbarContributions();
 }
 
 function saveRename(id) {
@@ -1340,6 +1628,7 @@ function saveRename(id) {
 }
 
 document.addEventListener('keydown', (event) => {
+  if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k') { event.preventDefault(); togglePalette(); }
   if ((event.metaKey || event.ctrlKey) && event.key === ',') { event.preventDefault(); state.lastFocusId = 'settings'; state.modal = 'settings'; render(); setTimeout(() => document.querySelector('#base-url')?.focus(), 30); }
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && state.mode !== 'loading') { event.preventDefault(); analyze(); }
   if (event.key === 'Escape' && state.modal) { closeModal(); }

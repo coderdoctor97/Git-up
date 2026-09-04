@@ -331,15 +331,29 @@ function aiPrompt({ repo, metadata, files, failedStep, errorText, remainingSteps
 }
 
 async function aiCall(config, prompt) {
-  const base = String(config.baseUrl).replace(/\/$/, '');
-  const endpointValue = String(config.endpoint || '/chat/completions');
-  const endpointUrl = /^https?:\/\//i.test(endpointValue) ? endpointValue : `${base}${endpointValue.startsWith('/') ? endpointValue : `/${endpointValue}`}`;
-  const response = await fetch(endpointUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({ model: config.model, temperature: 0.15, messages: [{ role: 'user', content: prompt }] }),
-  });
-  if (!response.ok) throw new Error(`AI provider returned ${response.status}: ${(await response.text()).slice(0, 160)}`);
+  const base = String(config.baseUrl).trim().replace(/\/+$/, '');
+  const endpointValue = String(config.endpoint || '/chat/completions').trim() || '/chat/completions';
+  const suffix = /^https?:\/\//i.test(endpointValue) ? null : (endpointValue.startsWith('/') ? endpointValue : `/${endpointValue}`);
+  const endpointUrl = suffix === null ? endpointValue : (base.toLowerCase().endsWith(suffix.toLowerCase()) ? base : `${base}${suffix}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45_000);
+  let response;
+  try {
+    response = await fetch(endpointUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+      body: JSON.stringify({ model: config.model, temperature: 0.15, messages: [{ role: 'user', content: prompt }] }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('AI provider timed out after 45s. Check the base URL, or retry without AI (the local fix still works).');
+    const message = error instanceof Error ? error.message : String(error || '');
+    if (/fetch failed|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|network|Load failed/i.test(message)) throw new Error(`AI provider is unreachable (${message || 'network error'}). Check the base URL and that the provider is running, or retry without AI.`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!response.ok) throw new Error(`AI provider returned ${response.status}: ${(await response.text()).slice(0, 160)}. Check the base URL, endpoint, model, and key.`);
   const payload = await response.json();
   const text = payload?.choices?.[0]?.message?.content || payload?.choices?.[0]?.text || payload?.output_text || payload?.content || '';
   const cleaned = String(text).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();

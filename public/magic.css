@@ -13,25 +13,27 @@
 
 /* --- 1. Shimmer sweep on the primary CTAs (shimmer-button technique) --------
    Selector-based so no template changes are needed. The sheen is a skewed
-   white gradient that sweeps across the button every few seconds. */
-.analyze-button, .install-button, .new-analysis {
+   white gradient that sweeps across the button every few seconds. Kept on the
+   two true entry points only (analyze + new analysis); repeated panels use the
+   plain hover treatment so the effect never becomes wallpaper. */
+.analyze-button, .new-analysis {
   position: relative;
   overflow: hidden;
 }
-.analyze-button::after, .install-button::after, .new-analysis::after {
+.analyze-button::after, .new-analysis::after {
   content: '';
   position: absolute;
   top: -20%;
   bottom: -20%;
   left: -70%;
   width: 45%;
-  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, .45), transparent);
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, .35), transparent);
   transform: skewX(-20deg);
   pointer-events: none;
-  animation: magic-sheen 4s ease-in-out infinite;
+  animation: magic-sheen 6.5s ease-in-out infinite;
 }
-.analyze-button:hover::after, .install-button:hover::after, .new-analysis:hover::after {
-  animation-duration: 2.2s;
+.analyze-button:hover::after, .new-analysis:hover::after {
+  animation-duration: 2.6s;
 }
 @keyframes magic-sheen {
   0% { left: -70%; }
@@ -74,6 +76,448 @@ body::after {
 
 /* --- Reduced motion: static, fully usable ----------------------------------- */
 @media (prefers-reduced-motion: reduce) {
-  .analyze-button::after, .install-button::after, .new-analysis::after { display: none; }
+  .analyze-button::after, .new-analysis::after { display: none; }
   .panel, .seg-option, .explorer-btn, .route-preview, .route-status { transition: none; }
+}
+
+/* ===========================================================================
+   Magic layer v2 — additive. Tokens, blur-fade reveal, card border glow,
+   signature marquee, staggered lists, command palette. Loaded after
+   styles.css; every rule degrades gracefully and honours reduced motion.
+   =========================================================================== */
+
+/* --- Design tokens: spacing, type, motion, depth -----------------------------
+   Additive second :root block; existing --bg/--route/etc. in styles.css stay
+   authoritative for colour so the surveyor's-ledger palette is untouched. */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --type-xs: 10px;
+  --type-sm: 11px;
+  --type-md: 12px;
+  --type-lg: 14px;
+  --type-xl: 17px;
+  --type-2xl: 23px;
+  --shadow-sm: 0 4px 14px rgba(0, 0, 0, .18);
+  --shadow-md: 0 12px 34px rgba(0, 0, 0, .26);
+  --dur-reveal: 620ms;
+  --stagger-step: 55ms;
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+}
+[data-theme="light"] {
+  --shadow-sm: 0 2px 10px rgba(20, 40, 32, .08);
+  --shadow-md: 0 10px 26px rgba(20, 40, 32, .12);
+}
+
+/* Typography polish: balanced headings, tidy rag. Pure hints — no fallback risk. */
+h1, h2, h3, h4 { text-wrap: balance; }
+.hero-copy, .repo-description, .panel-subtitle, .recovery-diagnosis { text-wrap: pretty; }
+
+/* --- 5. Blur fade / scroll reveal (data-reveal) -------------------------------
+   JS arms the page with `reveal-armed` before the first paint after render;
+   without JS nothing is ever hidden. Once every target has been revealed the
+   `reveal-done` seal is set so constant re-renders (tick a checkbox) can never
+   re-hide content. bindReveals() staggers elements that enter together. */
+html.reveal-armed:not(.reveal-done) [data-reveal] {
+  opacity: 0;
+  transform: translateY(14px);
+  filter: blur(6px);
+}
+html.reveal-armed:not(.reveal-done) [data-reveal].revealed {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+  transition:
+    opacity var(--dur-reveal) var(--ease-out),
+    transform var(--dur-reveal) var(--ease-out),
+    filter var(--dur-reveal) var(--ease-out);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+html.reveal-armed:not(.reveal-done) [data-reveal-stagger] > * {
+  opacity: 0;
+  transform: translateY(10px);
+}
+html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > * {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity var(--dur-reveal) var(--ease-out),
+    transform var(--dur-reveal) var(--ease-out);
+}
+html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child(1) { transition-delay: calc(var(--stagger-step) * 0); }
+html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child(2) { transition-delay: calc(var(--stagger-step) * 1); }
+html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child(3) { transition-delay: calc(var(--stagger-step) * 2); }
+html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child(4) { transition-delay: calc(var(--stagger-step) * 3); }
+html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child(5) { transition-delay: calc(var(--stagger-step) * 4); }
+html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child(6) { transition-delay: calc(var(--stagger-step) * 5); }
+html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child(7) { transition-delay: calc(var(--stagger-step) * 6); }
+html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child(8) { transition-delay: calc(var(--stagger-step) * 7); }
+html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child(9) { transition-delay: calc(var(--stagger-step) * 8); }
+html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child(10) { transition-delay: calc(var(--stagger-step) * 9); }
+html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child(11) { transition-delay: calc(var(--stagger-step) * 10); }
+html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child(12) { transition-delay: calc(var(--stagger-step) * 11); }
+
+/* --- 2. Magic card, border-glow mode ------------------------------------------
+   A 1px gradient ring that brightens near the cursor, masked to the border
+   ring only (content box is punched out). Paints above nothing, shifts no
+   layout, and matches the existing --mx/--my spotlight coordinates. */
+.panel {
+  position: relative;
+}
+.panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: radial-gradient(280px circle at var(--mx, -300px) var(--my, -300px), rgba(127, 224, 178, .48), transparent 68%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask-composite: exclude;
+  opacity: 0;
+  transition: opacity .4s var(--ease);
+  pointer-events: none;
+}
+.panel:hover::before { opacity: 1; }
+[data-theme="light"] .panel::before {
+  background: radial-gradient(280px circle at var(--mx, -300px) var(--my, -300px), rgba(15, 157, 108, .55), transparent 68%);
+}
+
+/* --- 8. Signature marquee (failure-first strip) --------------------------------
+   CSS-only infinite loop: the track holds two identical groups and translates
+   -50%. Pauses on hover and focus-within; masks fade the edges; static wrap
+   under reduced motion. Hidden from assistive tech — the ranked fail-list
+   right below carries the same information. */
+.sig-marquee {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-soft);
+}
+.sig-marquee:not(.sig-static) {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+          mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+}
+.sig-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: magic-marquee 44s linear infinite;
+}
+.sig-marquee:hover .sig-marquee-track,
+.sig-marquee:focus-within .sig-marquee-track { animation-play-state: paused; }
+.sig-marquee-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 9px 14px;
+}
+.sig-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 320px;
+  padding: 4px 9px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 9.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sig-chip .sig-rank {
+  flex: none;
+  color: var(--route);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: .05em;
+}
+.sig-chip em {
+  flex: none;
+  color: var(--muted-2);
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 8.5px;
+}
+.sig-static .sig-marquee-group { flex-wrap: wrap; }
+@keyframes magic-marquee {
+  to { transform: translateX(-50%); }
+}
+
+/* --- 10. Command palette (Ctrl/Cmd+K) ------------------------------------------
+   Keyboard-first section nav + actions. Arrow keys move, Enter runs, Esc
+   closes; the focus trap from app.js handles Tab. */
+.palette-modal {
+  width: min(560px, 100%);
+  padding: 0;
+  overflow: hidden;
+}
+.palette-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted-2);
+}
+.palette-input {
+  min-width: 0;
+  flex: 1;
+  height: 26px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 13px;
+}
+.palette-input::placeholder { color: var(--muted-2); }
+.palette-list {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+  scrollbar-width: thin;
+}
+.palette-group-label {
+  padding: 9px 11px 4px;
+  color: var(--muted-2);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.palette-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 11px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  transition: background var(--dur-instant) var(--ease), color var(--dur-instant) var(--ease);
+}
+.palette-option:hover { color: var(--text); background: rgba(255, 255, 255, .03); }
+.palette-option.active {
+  color: var(--text);
+  background: var(--route-dim);
+  border-color: rgba(127, 224, 178, .22);
+}
+.palette-option .palette-ic { display: grid; place-items: center; flex: none; width: 22px; color: var(--muted); }
+.palette-option.active .palette-ic { color: var(--route); }
+.palette-hint {
+  margin-left: auto;
+  flex: none;
+  color: var(--muted-2);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+.palette-empty {
+  padding: 26px 20px;
+  color: var(--muted-2);
+  font-size: 11px;
+  text-align: center;
+}
+.palette-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted-2);
+  font-size: 9px;
+}
+.palette-foot span { display: inline-flex; align-items: center; gap: 5px; }
+.palette-key {
+  padding: 2px 5px;
+  color: var(--muted);
+  background: var(--panel-raised);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+}
+[data-theme="light"] .palette-option:hover { background: rgba(28, 62, 50, .05); }
+
+/* --- 11. Workspace particle field (particles.js engine) -------------------------
+   Scoped strictly to <main class="main">: the host div is absolutely
+   positioned inside the workspace and paints below .main-inner, so the
+   topbar, sidebar, modals, toasts and mobile nav are never covered. No
+   overflow clipping here — overflow:hidden would break the sticky
+   explanation column. The engine sizes its canvas to the host via JS.
+   pointer-events:none keeps clicks, selection and keyboard focus untouched.
+   Only the positioning adapts the reference CSS; the demo's red background,
+   stats badge and particle counter are intentionally excluded. */
+.main {
+  position: relative;
+}
+#particles-workspace {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+#particles-workspace .particles-js-canvas-el {
+  display: block;
+  pointer-events: none;
+}
+.main-inner {
+  position: relative;
+  z-index: 1;
+}
+
+/* --- 12. Top bar GitHub-activity squares ---------------------------------------
+   Scoped strictly to the header so the brand and the round controls stay
+   untouched. The host is absolutely positioned inside .topbar (which is
+   position:sticky, so it anchors here) and paints below the header content.
+   pointer-events:none keeps the logo/search/moon/settings buttons clickable.
+   The canvas is self-sizing via JS; no overflow clipping needed. */
+#topbar-contrib {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+#topbar-contrib canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.topbar > *:not(#topbar-contrib) {
+  position: relative;
+  z-index: 1;
+}
+
+/* --- Reduced motion v2: everything static, nothing hidden --------------------- */
+@media (prefers-reduced-motion: reduce) {
+  html.reveal-armed [data-reveal],
+  html.reveal-armed [data-reveal-stagger] > * {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+    transition: none !important;
+  }
+  #particles-workspace {
+    display: none; /* engine is never started; the static dot grid remains */
+  }
+  #topbar-contrib canvas {
+    opacity: 1; /* static speckle is painted once by JS; nothing animates */
+  }
+  .sig-marquee-track {
+    animation: none;
+    width: auto;
+    flex-wrap: wrap;
+  }
+  .sig-marquee:not(.sig-static) {
+    -webkit-mask-image: none;
+            mask-image: none;
+  }
+}
+
+/* ===========================================================================
+   Magic layer v3 — entrance variants, hover refinements, typography polish
+   =========================================================================== */
+
+/* --- Keyframes: entrance variants (Animate.css-style) ----------------------- */
+@keyframes rise-left {
+  from { opacity: 0; transform: translateX(-18px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes rise-right {
+  from { opacity: 0; transform: translateX(18px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* --- Reveal variants: data-reveal="left" | "right" | "scale" ---------------
+   These override the default translateY(14px) hidden state and the
+   translateY(0) revealed state when the attribute is present.              */
+html.reveal-armed:not(.reveal-done) [data-reveal="left"] {
+  transform: translateX(-18px);
+}
+html.reveal-armed:not(.reveal-done) [data-reveal="right"] {
+  transform: translateX(18px);
+}
+html.reveal-armed:not(.reveal-done) [data-reveal="scale"] {
+  transform: scale(0.96);
+}
+html.reveal-armed:not(.reveal-done) [data-reveal="left"].revealed,
+html.reveal-armed:not(.reveal-done) [data-reveal="right"].revealed {
+  transform: translateX(0);
+}
+html.reveal-armed:not(.reveal-done) [data-reveal="scale"].revealed {
+  transform: scale(1);
+}
+
+/* --- Hover micro-interactions (Hover.css-style) ----------------------------- */
+
+/* Nav item: sliding mint accent bar from left */
+.nav-item { position: relative; }
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 50%;
+  width: 3px; height: 60%;
+  background: var(--route);
+  border-radius: 0 3px 3px 0;
+  transform: translateY(-50%) scaleY(0);
+  transition: transform var(--dur-normal) var(--ease);
+}
+.nav-item:hover::before { transform: translateY(-50%) scaleY(1); }
+.nav-item.active::before { transform: translateY(-50%) scaleY(1); }
+
+/* Example chip: gentle scale alongside existing lift */
+.example-chip:hover { transform: translateY(-1px) scale(1.02); }
+
+/* Copy-mini: subtle scale on hover */
+.copy-mini:hover { transform: scale(1.08); }
+
+/* Step checkbox: ring glow when checked */
+.step-check:checked { box-shadow: 0 0 0 3px rgba(127, 224, 178, .15); }
+
+/* Tree row (dir): subtle indent slide on hover */
+.tree-row.dir { transition: padding-left var(--dur-normal) var(--ease), color var(--dur-instant) var(--ease), background var(--dur-instant) var(--ease); }
+.tree-row.dir:hover { padding-left: 11px; }
+
+/* Followup chip: scale alongside existing lift */
+.followup-chip:hover { transform: translateY(-1px) scale(1.02); }
+
+/* --- Typography rhythm (Vanilla Framework-style) ----------------------------- */
+
+/* Let headings inherit letter-spacing from body; they already specify
+   tight negative values which take precedence, but inherit prevents
+   conflict if body spacing changes. */
+h1, h2, h3, h4 { letter-spacing: inherit; }
+h1 { letter-spacing: -.03em; }
+h2 { letter-spacing: -.02em; }
+h3 { letter-spacing: -.01em; }
+
+/* Slightly more breathing room after hero headline */
+h1 + .hero-copy { margin-top: 22px; }
+
+/* Better multi-line readability for step titles */
+.step-title { line-height: 1.65; }
+
+/* --- Reduced motion v3: disable all new animations --------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .nav-item::before { transition: none; transform: translateY(-50%) scaleY(1); }
+  .tree-row.dir { transition: none; }
 }

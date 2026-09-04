@@ -6,6 +6,19 @@
   <meta name="theme-color" content="#0b1114" />
   <meta name="description" content="Git-Up turns a public GitHub repository URL into a living install path, built from repository evidence, that helps you recover when a step fails." />
   <title>Git-Up — Repository installation, made clear</title>
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Git-Up" />
+  <meta property="og:title" content="Git-Up — Repository installation, made clear" />
+  <meta property="og:description" content="Turn a public GitHub repo URL into a living install path — failure-first analysis, a multi-path install graph, an install contract, and recovery when a step breaks." />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Git-Up — Repository installation, made clear" />
+  <meta name="twitter:description" content="Turn a public GitHub repo URL into a living install path — failure-first analysis, a multi-path install graph, an install contract, and recovery when a step breaks." />
+  <meta name="twitter:image" content="/assets/logo/icon_Dark_mode.png" />
+  <meta property="og:image" content="/assets/logo/icon_Dark_mode.png" />
+  <link rel="icon" type="image/png" media="(prefers-color-scheme: light)" href="/assets/logo/icon_light_mode.png" />
+  <link rel="icon" type="image/png" media="(prefers-color-scheme: dark)" href="/assets/logo/icon_Dark_mode.png" />
+  <link rel="icon" type="image/png" href="/assets/logo/icon_Dark_mode.png" />
+  <link rel="apple-touch-icon" href="/assets/logo/icon_Dark_mode.png" />
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/magic.css" />
 </head>
@@ -13,6 +26,11 @@
   <noscript><p style="padding:24px;font-family:monospace">Git-Up needs JavaScript to compose the living install path.</p></noscript>
   <a class="skip-link" href="#main-content">Skip to main content</a>
   <div id="app"></div>
+  <!-- particles.js engine v2.0.0 (Vincent Garreau, MIT), vendored locally so
+       the workspace background needs no CDN. Must load before the module
+       below: classic scripts execute first, modules are deferred. -->
+  <script src="/vendor/particles.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.18/dist/lenis.min.js"></script>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

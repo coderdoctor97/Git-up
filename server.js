@@ -4,6 +4,7 @@ import { URL } from 'node:url';
 const PORT = Number(process.env.PORT || 3000);
 const HOST = '0.0.0.0';
 const PUBLIC_DIR = new URL('./public/', import.meta.url);
+const ASSETS_DIR = new URL('./assets/', import.meta.url);
 
 import { scanInstallFailures, patchNotesFor } from './server/failures.js';
 import { computeHealth, fetchCiSignal, healthVerdict } from './server/health.js';
@@ -529,23 +530,26 @@ function heuristicInsight(repo, metadata, files, mode) {
 async function callAiInsight(config, repo, metadata, files, mode, question) {
   if (!config || !config.baseUrl || !config.apiKey || !config.model) return null;
   const meta = INSIGHT_META[mode] || INSIGHT_META.recommendations;
-  const base = String(config.baseUrl).replace(/\/$/, '');
-  const endpointValue = String(config.endpoint || '/chat/completions');
-  const endpointUrl = /^https?:\/\//i.test(endpointValue) ? endpointValue : `${base}${endpointValue.startsWith('/') ? endpointValue : `/${endpointValue}`}`;
+  const endpointUrl = buildProviderUrl(config.baseUrl, config.endpoint || '/chat/completions');
   const modeBrief = mode === 'features'
     ? 'Propose 3–5 practical, creative feature extensions for a NEW fork. Each bullet: bold title, one plain sentence of what it does, one of who it delights. No jargon.'
     : mode === 'bugs'
       ? 'Audit logic and architecture for edge cases, vulnerabilities, and breakage-prone areas. Each bullet names the weak spot, how it shows up in plain words, and the fix-first hint. Concrete, file-aware, no fear-mongering.'
       : 'Recommend UX improvements, missing documentation, and untapped potential. Prioritise small, high-leverage wins a non-expert can understand. No jargon.';
   const prompt = `You are Git-Up, a kind senior product engineer. Analyse this public GitHub repository and return ONLY valid JSON.\n\nJSON schema:\n{"title":"string","intro":"2-sentence plain-language intro","bullets":["4-6 specific bullets, each 1-3 sentences"],"outro":"one-sentence suggested first step","followUps":["follow-up question 1","follow-up question 2","follow-up question 3"]}\n\nRules:\n- Reference actual files/steps from the context (e.g. package.json scripts, missing tests, env handling).\n- Task (${mode}): ${question || meta.question}\n- ${modeBrief}\n- followUps must be 2–3 short, clickable, contextual questions that continue THIS topic, not generic filler.\n- Plain, warm tone. Avoid heavy jargon where possible.\n\nRepository: ${repo.canonicalUrl}\nMetadata: ${JSON.stringify({ name: metadata.name, description: metadata.description, language: metadata.language, default_branch: metadata.default_branch, topics: metadata.topics })}\n\nFiles:\n${files.map((f) => `--- ${f.path}\n${compactText(f.content, 4000)}`).join('\n')}`;
-  const response = await fetch(endpointUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({ model: config.model, temperature: 0.35, messages: [{ role: 'user', content: prompt }] }),
-  });
+  let response;
+  try {
+    response = await fetchWithTimeout(endpointUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+      body: JSON.stringify({ model: config.model, temperature: 0.35, messages: [{ role: 'user', content: prompt }] }),
+    }, AI_CHAT_TIMEOUT_MS);
+  } catch (error) {
+    throw toProviderError(error);
+  }
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(`AI provider returned ${response.status}${detail ? `: ${detail.slice(0, 180)}` : '.'}`);
+    throw new Error(`AI provider returned ${response.status}${detail ? `: ${detail.slice(0, 180)}` : '. Check the base URL, endpoint, model, and key.'}`);
   }
   const parsed = parseAiJson(extractAiText(await response.json()));
   if (!parsed || !Array.isArray(parsed.bullets)) throw new Error('The AI insight response was not valid JSON. Try again.');
@@ -616,20 +620,66 @@ function parseAiJson(text) {
   try { return JSON.parse(match[0]); } catch { return null; }
 }
 
+// ---------------------------------------------------------------------------
+// Provider plumbing: every outbound request to the user's AI endpoint goes
+// through here so one misbehaving provider can never take the site down.
+// - buildProviderUrl avoids doubling the path when the base URL already ends
+//   with the endpoint (a common paste mistake: base = .../chat/completions).
+// - fetchWithTimeout aborts hung providers instead of hanging the analysis.
+// - toProviderError rewrites cryptic fetch failures ("fetch failed") into an
+//   actionable message that names the AI provider as the culprit.
+// ---------------------------------------------------------------------------
+const AI_CHAT_TIMEOUT_MS = 45_000;
+const AI_MODELS_TIMEOUT_MS = 15_000;
+
+function buildProviderUrl(baseUrl, endpoint) {
+  const base = String(baseUrl || '').trim().replace(/\/+$/, '');
+  const endpointValue = String(endpoint || '/chat/completions').trim() || '/chat/completions';
+  if (/^https?:\/\//i.test(endpointValue)) return endpointValue;
+  const suffix = endpointValue.startsWith('/') ? endpointValue : `/${endpointValue}`;
+  if (base.toLowerCase().endsWith(suffix.toLowerCase())) return base;
+  return `${base}${suffix}`;
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = AI_CHAT_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error(`AI provider timed out after ${Math.round(timeoutMs / 1000)}s. Check the base URL, or retry without AI (the local scan still works).`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function toProviderError(error, what = 'AI provider') {
+  const message = error instanceof Error ? error.message : String(error || '');
+  if (/timed out after/i.test(message)) return error;
+  if (/fetch failed|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|network|Load failed/i.test(message)) {
+    return new Error(`${what} is unreachable (${message || 'network error'}). Check the base URL and that the provider is running, or retry without AI.`);
+  }
+  return error instanceof Error ? error : new Error(String(message || `${what} request failed.`));
+}
+
 async function callAi(config, repo, metadata, files) {
   if (!config || !config.baseUrl || !config.apiKey || !config.model) return null;
-  const base = String(config.baseUrl).replace(/\/$/, '');
-  const endpointValue = String(config.endpoint || '/chat/completions');
-  const endpointUrl = /^https?:\/\//i.test(endpointValue) ? endpointValue : `${base}${endpointValue.startsWith('/') ? endpointValue : `/${endpointValue}`}`;
+  const endpointUrl = buildProviderUrl(config.baseUrl, config.endpoint || '/chat/completions');
   const prompt = `You are Git-Up, a meticulous senior developer advocate who can also explain anything to a 12-year-old. Analyze this public GitHub repository and return only valid JSON. Do not invent commands or requirements. Use the repository files as your source of truth. If uncertain, say so in notes.\n\nJSON schema:\n{\"summary\":\"string\",\"confidence\":\"high|medium|low\",\"dependencies\":[{\"name\":\"string\",\"version\":\"string|null\",\"kind\":\"runtime|dev|tooling|service\"}],\"requirements\":[\"string\"],\"environment\":[\"ENV_KEY\"],\"steps\":[{\"id\":\"stable-id\",\"title\":\"action title\",\"command\":\"shell commands or empty string\",\"detail\":\"what to do\"}],\"explanations\":[{\"stepId\":\"matching step id\",\"title\":\"short title\",\"body\":\"why this matters\"}],\"notes\":[\"caveat\"],\"anticipatedFailures\":[{\"signature\":\"short label of the failure\",\"stepId\":\"which step id it breaks\",\"symptom\":\"error text people actually paste\",\"fix\":\"the command or action that avoids it\"}],\"plainOverview\":{\"analogy\":\"one vivid real-world analogy sentence\",\"problem\":\"what everyday problem this solves, zero jargon\",\"audience\":\"who benefits, in everyday roles\",\"howItWorks\":[\"step 1 in plain words\",\"step 2\",\"step 3\"]},\"followUps\":[\"contextual follow-up question 1\",\"question 2\",\"question 3\"]}\n\nInstall-path rules (never break these):\n- steps[].id must be chosen from this vocabulary when the action matches it: clone, toolchain, services, docker, dependencies, database, env, build, dev, run, verify. Reuse the same id for the same action across revisions so progress is not lost.\n- steps[].order is an integer 0-90 placing the step in the sequence; steps with the same action must keep the same order slot.\n- anticipatedFailures: the 2-4 ways installers most often break for THIS repository, each pointing at the step id it breaks. Base them on the README, lockfiles, and Dockerfile — not on generic advice. Return an empty array if nothing specific is known.\n\nSTRICT plainOverview rules (never break these):\n- ZERO technical jargon. Never use: API, endpoints, serialization, dependencies, CI/CD, manifest, lockfile, toolchain, middleware, SDK, CLI, interface, schema, runtime, framework, repository (say \"project\" instead).\n- Write at a 12-year-old reading level. Use real-world analogies (kitchen, recipe box, library, workshop, garden, lunchbox, toolbox).\n- Cover exactly: what everyday problem it solves, who benefits (parents, teachers, shop owners, students…), how it works from a visitor's point of view in 3 short steps.\n- followUps: 2–3 short clickable questions specific to THIS project (e.g. ideas to build next, what to be careful about). Never generic filler.\n\nRepository: ${repo.canonicalUrl}\nMetadata: ${JSON.stringify({ name: metadata.name, description: metadata.description, language: metadata.language, default_branch: metadata.default_branch, topics: metadata.topics })}\n\nFiles:\n${files.map((file) => `--- ${file.path}\n${compactText(file.content, 5000)}`).join('\n')}`;
-  const response = await fetch(endpointUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({ model: config.model, temperature: 0.1, messages: [{ role: 'user', content: prompt }] }),
-  });
+  let response;
+  try {
+    response = await fetchWithTimeout(endpointUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+      body: JSON.stringify({ model: config.model, temperature: 0.1, messages: [{ role: 'user', content: prompt }] }),
+    }, AI_CHAT_TIMEOUT_MS);
+  } catch (error) {
+    throw toProviderError(error);
+  }
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(`AI provider returned ${response.status}${detail ? `: ${detail.slice(0, 180)}` : '.'}`);
+    throw new Error(`AI provider returned ${response.status}${detail ? `: ${detail.slice(0, 180)}` : '. Check the base URL, endpoint, model, and key.'}`);
   }
   const payload = await response.json();
   const parsed = parseAiJson(extractAiText(payload));
@@ -666,8 +716,20 @@ async function analyzeRepository(body) {
   const { repo, metadata, files, fullTreePaths, rawBlocked } = await getRepoContext(body.repoUrl);
   let scanNotice = '';
   if ((files.length <= 2) && fullTreePaths.length <= 2) scanNotice = '';
-  const aiGuide = body.config ? await callAi(body.config, repo, metadata, files) : null;
+  // AI upgrades the guide but must never break it: any provider failure
+  // (bad key, wrong endpoint, rate limit, offline) falls back to the local
+  // scan with a visible warning instead of failing the whole analysis.
+  let aiGuide = null;
+  let aiWarning = '';
+  if (body.config) {
+    try {
+      aiGuide = await callAi(body.config, repo, metadata, files);
+    } catch (error) {
+      aiWarning = error instanceof Error ? error.message : 'The AI provider could not answer.';
+    }
+  }
   const guide = normaliseGuide(aiGuide, repo, metadata, files, aiGuide ? 'ai' : 'local-scan', fullTreePaths);
+  if (aiWarning) guide.notes = [`AI review unavailable (${aiWarning.slice(0, 220)}). Showing the local scan instead — check the AI provider settings and retry for a deeper review.`, ...(guide.notes || [])];
 
   // Feature 2 → read the repository's own failure history before shaping the path.
   const failureScan = await scanInstallFailures({ repo, metadata, files, github, token: process.env.GITHUB_TOKEN });
@@ -699,6 +761,9 @@ async function analyzeRepository(body) {
   guide.tuning = { steps: guide.steps, notes: guide.notes, plainOverview: guide.plainOverview, notesWithSeverity: undefined };
   const tuned = tuneGuide(guide, expertise);
 
+  // The AI warning is unshifted post-tune on purpose: tuneGuide drops
+  // low-severity notes for the default reader, and this one must stay visible.
+  if (aiWarning && !tuned.notes.some((note) => String(note).startsWith('AI review unavailable'))) tuned.notes.unshift(`AI review unavailable (${aiWarning.slice(0, 220)}). Showing the local scan instead — check the AI provider settings and retry for a deeper review.`);
   if (rawBlocked) tuned.notes.unshift('File contents could not be downloaded from this network, so the scan used the repository’s file names only. Versions and dependency counts in the contract are therefore unavailable rather than wrong.');
   if (scanNotice && !tuned.notes.includes(scanNotice)) tuned.notes.unshift(scanNotice);
   if (!fullTreePaths.length) tuned.notes.unshift('Full folder listing was unavailable; showing inspected setup files only.');
@@ -855,33 +920,151 @@ async function fetchModels(body) {
   if (!body.baseUrl || !body.apiKey) throw new Error('Base URL and API key are required to fetch models.');
   const endpoint = body.modelsEndpoint || '/models';
   const url = safeUpstreamUrl(body.baseUrl, endpoint);
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${body.apiKey}`, Accept: 'application/json' } });
-  if (!response.ok) throw new Error(`Model request returned ${response.status}. Check the base URL and key.`);
+  let response;
+  try {
+    response = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${body.apiKey}`, Accept: 'application/json' } }, AI_MODELS_TIMEOUT_MS);
+  } catch (error) {
+    throw toProviderError(error, 'AI provider');
+  }
+  if (!response.ok) {
+    let detail = '';
+    try { detail = (await response.text()).slice(0, 180); } catch { /* ignore */ }
+    throw new Error(`Model request returned ${response.status}${detail ? `: ${detail}` : '. Check the base URL and key.'}`);
+  }
   const payload = await response.json();
   const models = Array.isArray(payload) ? payload : payload.data || payload.models || [];
-  return models.map((model) => typeof model === 'string' ? model : model.id).filter(Boolean).sort();
+  // OpenAI uses {id}, Ollama uses {name}/{model}, some proxies return plain strings.
+  return models.map((model) => typeof model === 'string' ? model : (model.id || model.name || model.model)).filter(Boolean).sort();
+}
+
+function sendProgress(res, phase, label, percent) {
+  const payload = `data: ${JSON.stringify({ phase, label, percent })}\n\n`;
+  res.write(payload);
+  try { res.socket?.write(''); } catch { /* client gone */ }
+}
+
+async function analyzeStream(req, res, body) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders();
+  res.write('\n');
+
+  // NOTE: a previous change tried `req.socket.writableHighWaterMark = 256`
+  // here to defeat buffering. That assignment throws on modern Node
+  // (writableHighWaterMark is getter-only) and — because it ran before the
+  // try block and handleApi re-threw it — crashed the whole server process
+  // on every stream request. Removed: writeHead + flushHeaders is what makes
+  // SSE events arrive promptly; each res.write() is flushed by Node.
+  const send = (phase, label, percent) => { try { sendProgress(res, phase, label, percent); } catch { /* client gone */ } };
+  const done = () => {
+    try { res.end(); } catch { /* ignore */ }
+  };
+
+  try {
+    const expertise = EXPERTISE_LEVELS.some((level) => level.id === body?.expertise) ? body.expertise : 'some';
+    send('repository', 'Reading repository metadata…', 10);
+    const { repo, metadata, files, fullTreePaths, rawBlocked } = await getRepoContext(body.repoUrl);
+    send('files', 'Scanning setup files…', 25);
+
+    let scanNotice = '';
+    if (!((files.length <= 2) && fullTreePaths.length <= 2)) scanNotice = '';
+    // Same fallback as /api/analyze: a failing provider must not fail the stream.
+    let aiGuide = null;
+    let aiWarning = '';
+    if (body.config) {
+      try {
+        aiGuide = await callAi(body.config, repo, metadata, files);
+      } catch (error) {
+        aiWarning = error instanceof Error ? error.message : 'The AI provider could not answer.';
+      }
+    }
+    send('ai', aiGuide ? 'Reviewing with AI…' : 'Building local guide…', 45);
+    const guide = normaliseGuide(aiGuide, repo, metadata, files, aiGuide ? 'ai' : 'local-scan', fullTreePaths);
+    if (aiWarning) guide.notes = [`AI review unavailable (${aiWarning.slice(0, 220)}). Showing the local scan instead — check the AI provider settings and retry for a deeper review.`, ...(guide.notes || [])];
+
+    send('failures', 'Checking failure history…', 55);
+    const failureScan = await scanInstallFailures({ repo, metadata, files, github, token: process.env.GITHUB_TOKEN });
+    mergeAnticipatedFailures(guide, failureScan);
+
+    send('health', 'Computing health score…', 65);
+    const ci = await fetchCiSignal({ repo, github, metadata });
+    const health = computeHealth({ repo, metadata, files, failureScan, ci });
+
+    send('path', 'Composing install path…', 78);
+    const packageManager = detectPackageManager(files);
+    const scripts = parseJsonFile(files, 'package.json')?.scripts || {};
+    const patched = patchStepsForFailures(guide.steps, failureScan);
+    guide.steps = patched.steps;
+    guide.pathGraph = buildPathGraph({ repo, metadata, files, packageManager, scripts, failureScan });
+    guide.defaultPath = composeSteps(guide.steps, guide.pathGraph, guide.pathGraph.defaults);
+    guide.failurePatches = patched.patches;
+    guide.pathPatches = patchNotesFor(failureScan, guide.steps);
+
+    send('contract', 'Building install contract…', 90);
+    guide.contract = buildContract({ repo, metadata, files, steps: guide.defaultPath, health, failureScan, source: guide.source });
+    guide.health = health;
+    guide.failureScan = slimFailureScan(failureScan);
+    guide.verdict = healthVerdict(health);
+    guide.session = { revision: 1, startedAt: new Date().toISOString(), checked: {}, failures: [], revisions: [] };
+    guide.expertiseOptions = EXPERTISE_LEVELS;
+
+    send('tuning', 'Tuning for your level…', 95);
+    guide.tuning = { steps: guide.steps, notes: guide.notes, plainOverview: guide.plainOverview, notesWithSeverity: undefined };
+    const tuned = tuneGuide(guide, expertise);
+
+    // Post-tune so the reader-level note filter cannot drop this warning.
+    if (aiWarning && !tuned.notes.some((note) => String(note).startsWith('AI review unavailable'))) tuned.notes.unshift(`AI review unavailable (${aiWarning.slice(0, 220)}). Showing the local scan instead — check the AI provider settings and retry for a deeper review.`);
+    if (rawBlocked) tuned.notes.unshift('File contents could not be downloaded from this network, so the scan used the repository\'s file names only. Versions and dependency counts in the contract are therefore unavailable rather than wrong.');
+    if (scanNotice && !tuned.notes.includes(scanNotice)) tuned.notes.unshift(scanNotice);
+    if (!fullTreePaths.length) tuned.notes.unshift('Full folder listing was unavailable; showing inspected setup files only.');
+
+    send('done', 'Analysis complete', 100);
+    res.write(`data: ${JSON.stringify({ phase: 'result', guide: tuned })}\n\n`);
+    done();
+  } catch (error) {
+    res.write(`data: ${JSON.stringify({ phase: 'error', error: error instanceof Error ? error.message : 'Something went wrong.' })}\n\n`);
+    done();
+  }
 }
 
 async function handleApi(req, res, pathname) {
   try {
     const body = await readBody(req);
     if (req.method === 'POST' && pathname === '/api/analyze') return sendJson(res, 200, { ok: true, guide: await analyzeRepository(body) });
+    // Awaited (not bare `return promise`) so a stream failure is caught below
+    // instead of escaping as an unhandled rejection that kills the server.
+    if (req.method === 'POST' && pathname === '/api/analyze-stream') { await analyzeStream(req, res, body); return; }
     if (req.method === 'POST' && pathname === '/api/insight') return sendJson(res, 200, { ok: true, insight: await analyzeInsight(body) });
     if (req.method === 'POST' && pathname === '/api/models') return sendJson(res, 200, { ok: true, models: await fetchModels(body) });
     if (req.method === 'POST' && pathname === '/api/recover') return sendJson(res, 200, { ok: true, recovery: await analyzeRecovery(body) });
     if (req.method === 'GET' && pathname === '/api/health') return sendJson(res, 200, { ok: true, service: 'git-up', version: '2.0', features: FEATURE_FLAGS, githubToken: Boolean(process.env.GITHUB_TOKEN) });
     return sendJson(res, 404, { ok: false, error: 'Not found.' });
   } catch (error) {
+    // The SSE stream owns its socket once headers are sent; writing JSON here
+    // would crash with ERR_STREAM_WRITE_AFTER_END. Only reply if untouched.
+    if (res.headersSent || res.writableEnded) { try { res.end(); } catch { /* ignore */ } return; }
     return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : 'Something went wrong.' });
   }
 }
 
-const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon' };
 
 async function serveStatic(req, res, pathname) {
   const requested = pathname === '/' ? 'index.html' : pathname.slice(1);
   if (requested.includes('..')) return sendText(res, 400, 'Bad request');
-  const fileUrl = new URL(requested, PUBLIC_DIR);
+  // Brand assets live in /assets/logo/ at the repo root, but the client
+  // requests them as /assets/logo/.... Serve that prefix from ASSETS_DIR so
+  // the mode-wise logos resolve; everything else serves from public/.
+  const isBrandAsset = requested === 'assets' || requested.startsWith('assets/');
+  const baseDir = isBrandAsset ? ASSETS_DIR : PUBLIC_DIR;
+  const relative = isBrandAsset ? requested.slice('assets/'.length) : requested;
+  if (isBrandAsset && (!relative || relative.endsWith('/'))) return sendText(res, 404, 'Not found');
+  const fileUrl = new URL(relative, baseDir);
   try {
     const file = await import('node:fs/promises').then((fs) => fs.readFile(fileUrl));
     const ext = requested.slice(requested.lastIndexOf('.'));

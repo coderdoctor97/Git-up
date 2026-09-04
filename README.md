@@ -10,6 +10,29 @@ npm start
 
 Then open `http://localhost:3000`.
 
+## Technology stack
+
+- **Vanilla HTML / CSS / JavaScript (ES modules)** — no framework, no build step, no dependencies.
+- **Node.js (built-in `http` module)** for the server; nothing to install beyond Node 18+.
+- The UI is a single-page client (`public/app.js`) that renders from string templates and re-binds events after each render. `public/path-engine.js` is shared by browser and server on purpose, so a rendered checklist can never disagree with the generated script.
+
+## Scripts
+
+| Script | What it does |
+| --- | --- |
+| `npm start` | Start the server on `PORT` (default 3000). |
+| `npm test` | Run the offline `node --test` suite (path engine, features, render, UI system). |
+
+## Environment variables
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `PORT` | no | Server port. Defaults to `3000`. |
+| `GITHUB_TOKEN` | no | Raises GitHub API rate limits and enables Discussions scanning for the failure-first analysis. No scopes needed for public repos. |
+| `E2B_SANDBOX_ID` | no | Only used to print the correct preview URL when running inside an E2B sandbox. |
+
+See `.env.example`. Never commit real tokens.
+
 ## What is included
 
 ### The six v2 capabilities
@@ -57,10 +80,51 @@ server/contract.js         Feature 4 — install contract
 server/recovery.js         Feature 1 — error matching and corrected paths
 public/path-engine.js      shared composition + tuning engine (browser and server import it)
 public/app.js              the whole client UI
+public/styles.css          the design system (tokens, layout, every component, light theme)
+public/magic.css           the Magic layer (tokens, reveal, card glow, marquee, palette)
+public/magic.js            spotlight, tickers, scroll reveal (no top-level DOM access)
 tests/features.test.mjs    offline regression tests for all of the above
+tests/render.test.mjs      whole-view render tests against a DOM stub
+tests/session.test.mjs     install-session persistence tests
+tests/ui-system.test.mjs   smoke tests for the Magic-layer components
 ```
 
 `public/path-engine.js` is imported by both sides on purpose: the browser and the server compose a path with the same function, so a rendered checklist can never disagree with the generated script.
+
+## Design system
+
+The visual identity is a **surveyor's route ledger**: dark paper (`--bg #0b1114`), a mint route accent (`--route #7fe0b2`), mono metadata, a ruled route spine with mileage dots, and stamped trust artifacts. A full daylight theme is provided via `[data-theme="light"]` variable overrides.
+
+`styles.css` owns every colour, surface, and component token. `magic.css` is strictly additive: it layers animation and interaction on top without modifying base rules, so the ledger identity stays intact.
+
+Tokens live in two additive `:root` blocks:
+
+- Colour/surface (styles.css): `--bg`, `--panel`, `--route`, `--muted`, `--line`, `--radius-*`, `--dur-*`, `--ease`.
+- Rhythm (magic.css): `--space-1…8`, `--type-*`, `--shadow-sm/md`, `--dur-reveal`, `--stagger-step`, `--ease-out`.
+
+Avoid one-off colours and spacing values in new code — use the tokens.
+
+## Animation system (Magic-UI-inspired, dependency-free)
+
+All patterns are hand-built with CSS animations, CSS custom properties, `IntersectionObserver`, and `requestAnimationFrame` — no animation libraries.
+
+| Pattern | Where | How it works |
+| --- | --- | --- |
+| **Magic Card** | every `.panel` | Cursor-tracked radial spotlight (`--mx`/`--my` via `pointermove`) plus a masked 1px border glow that brightens near the cursor. No layout shift. |
+| **Blur Fade / scroll reveal** | panels + lists via `data-reveal` / `data-reveal-stagger` | `bindReveals()` arms the page (`reveal-armed`), reveals on intersection with batch stagger, then seals the view (`reveal-done`) so re-renders never flicker. A 4s failsafe and no-JS default keep content visible. |
+| **Animated list** | install steps, failure rows | Staggered entrance through `data-reveal-stagger`; existing hover/active states. |
+| **Marquee** | failure-signature strip | Pure CSS infinite loop (two identical groups, `translateX(-50%)`), pauses on hover/focus, edge fade masks, static wrap under reduced motion. Only shown with ≥3 signatures; hidden from assistive tech (the ranked list below is the source of truth). |
+| **Number ticker** | health score ring | `requestAnimationFrame` count-up on visibility. |
+| **Shimmer button** | `Analyze`, `New analysis` | Periodic sheen sweep, 6.5s idle cadence; reserved for the two true entry points. |
+| **Bento grid** | analysis overview strip | CSS Grid `grid-template-areas`: summary anchors two rows; branch/language/files are compact ledger stamps. Stacks cleanly at 800px and 600px. |
+| **Command palette** | Ctrl/Cmd+K, topbar search, mobile "Menu" | Keyboard-first navigation and actions with type-to-filter, arrow/Enter selection, `listbox`/`option` semantics, and the shared modal focus trap. Deliberately chosen over a decorative dock. |
+
+Accessibility rules that hold across all of it:
+
+- `prefers-reduced-motion: reduce` disables every animation (reveal, marquee, sheen, spotlight transitions) without hiding content.
+- Reveal effects are opt-in per element (`data-reveal`) and never run without JavaScript.
+- The marquee is `aria-hidden` with an `sr-only` text alternative; the accessible ranked list stays beneath it.
+- The palette is a real dialog (`role="dialog"`, `aria-modal`, `aria-activedescendant`) sharing the existing focus trap.
 
 ## API
 
@@ -83,4 +147,15 @@ tests/features.test.mjs    offline regression tests for all of the above
 npm test
 ```
 
-Runs `node --test tests/features.test.mjs`: path composition, lineage keys, revision splicing, contract determinism, failure clustering, recovery matching, and reader-mode idempotency. No network, no API key.
+Runs the full offline `node --test` suite: path composition, lineage keys, revision splicing, contract determinism, failure clustering, recovery matching, reader-mode idempotency, whole-view rendering, session persistence, and the Magic-layer UI components (reveal attributes, bento strip, marquee duplication, palette). No network, no API key.
+
+## Deployment
+
+The server is a single ESM Node process with no build step:
+
+```bash
+npm ci
+GITHUB_TOKEN=... PORT=3000 node server.js
+```
+
+Any Node host works (a VM, Fly.io, Railway, Docker). There is no dynamic OG route — the app is served as-is with static Open Graph / Twitter meta tags in `public/index.html`.

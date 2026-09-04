@@ -5,9 +5,19 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = '0.0.0.0';
 const PUBLIC_DIR = new URL('./public/', import.meta.url);
 
+import { scanInstallFailures, patchNotesFor } from './server/failures.js';
+import { computeHealth, fetchCiSignal, healthVerdict } from './server/health.js';
+import { buildPathGraph, patchStepsForFailures } from './server/pathgraph.js';
+import { buildContract } from './server/contract.js';
+import { recoverPath } from './server/recovery.js';
+import { decorateSteps, composeSteps, EXPERTISE_LEVELS, expertiseFor, tuneGuide } from './public/path-engine.js';
+
+const FEATURE_FLAGS = ['living-install-path', 'failure-first-analysis', 'multi-path-graph', 'install-contract', 'zero-context-clone', 'repo-health-score'];
+const CONTEXT_TTL_MS = 5 * 60 * 1000;
 const MAX_FILE_BYTES = 110_000;
 const MAX_CONTEXT_CHARS = 36_000;
-const USER_AGENT = 'Forgepath/1.0 (repository-installation-guide)';
+const MAX_SCAN_FILES = 24;
+const USER_AGENT = 'Git-Up/1.0 (repository-installation-guide)';
 
 function sendJson(res, status, data) {
   const body = JSON.stringify(data);
@@ -90,16 +100,19 @@ async function github(path, options = {}) {
     let detail = '';
     try { detail = (await response.json()).message || ''; } catch { /* ignore */ }
     if (response.status === 403) throw new Error('GitHub rate limit reached. Add a GitHub token to the server environment or try again later.');
-    if (response.status === 404) throw new Error('Repository not found, or it is private. Forgepath can currently scan public repositories.');
+    if (response.status === 404) throw new Error('Repository not found, or it is private. Git-Up can currently scan public repositories.');
     throw new Error(`GitHub returned ${response.status}${detail ? `: ${detail}` : '.'}`);
   }
   return response.json();
 }
 
 async function rawGithub(path, ref) {
-  const response = await fetch(`https://raw.githubusercontent.com/${path}?ref=${encodeURIComponent(ref)}`, {
-    headers: { 'User-Agent': USER_AGENT },
-  });
+  let response;
+  try {
+    response = await fetch(`https://raw.githubusercontent.com/${path}?ref=${encodeURIComponent(ref)}`, {
+      headers: { 'User-Agent': USER_AGENT },
+    });
+  } catch { return null; }
   if (!response.ok) return null;
   const buffer = Buffer.from(await response.arrayBuffer());
   if (buffer.length > MAX_FILE_BYTES) return buffer.subarray(0, MAX_FILE_BYTES).toString('utf8') + '\n[truncated]';
@@ -107,10 +120,13 @@ async function rawGithub(path, ref) {
 }
 
 async function rawGithubHead(repo, filePath) {
-  const response = await fetch(`https://github.com/${repo.apiPath}/raw/HEAD/${filePath}`, {
-    headers: { 'User-Agent': USER_AGENT },
-    redirect: 'follow',
-  });
+  let response;
+  try {
+    response = await fetch(`https://github.com/${repo.apiPath}/raw/HEAD/${filePath}`, {
+      headers: { 'User-Agent': USER_AGENT },
+      redirect: 'follow',
+    });
+  } catch { return null; }
   if (!response.ok) return null;
   const buffer = Buffer.from(await response.arrayBuffer());
   if (buffer.length > MAX_FILE_BYTES) return buffer.subarray(0, MAX_FILE_BYTES).toString('utf8') + '\n[truncated]';
@@ -165,13 +181,72 @@ function filePriority(name) {
   return 50;
 }
 
+const CRITICAL_ROOT = ['package.json', 'go.mod', 'cargo.toml', 'pyproject.toml', 'requirements.txt', 'dockerfile',
+  'docker-compose.yml', 'docker-compose.yaml', 'makefile', 'justfile', '.env.example', '.env.sample', 'gemfile',
+  'composer.json', 'setup.py', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'uv.lock', 'deno.json',
+  'procfile', 'fly.toml', 'railway.json', 'readme.md'];
+
+/**
+ * Choose the files worth reading.
+ *
+ * Sorting by name alone let a 27k-file repository fill every slot with nested
+ * READMEs, which starved the graph, the contract, and the health score of the
+ * root manifests that actually decide how a project installs. So: root-level
+ * critical files first, then at most a couple of any repeated file name, with
+ * shallower paths winning.
+ */
 function pickFiles(tree) {
-  return tree
+  const blobs = tree
     .filter((item) => item.type === 'blob')
     .filter((item) => item.size <= MAX_FILE_BYTES || item.size === undefined)
     .filter((item) => !/(node_modules|vendor|dist|build|\.git|coverage|\.next|target)\//i.test(item.path))
-    .sort((a, b) => filePriority(a.path) - filePriority(b.path))
-    .slice(0, 20);
+    .map((item) => {
+      const base = String(item.path).toLowerCase().split('/').pop();
+      const depth = String(item.path).split('/').length - 1;
+      return { ...item, base, depth, root: depth === 0, criticalRank: CRITICAL_ROOT.indexOf(base) };
+    });
+
+  const chosen = [];
+  const taken = new Set();
+  const perName = new Map();
+  const admit = (item, limit) => {
+    if (!item || taken.has(item.path)) return false;
+    const used = perName.get(item.base) || 0;
+    if (used >= limit) return false;
+    perName.set(item.base, used + 1);
+    taken.add(item.path);
+    chosen.push(item);
+    return true;
+  };
+
+  // Tier 1 — every root-level manifest / container / env template.
+  for (const item of [...blobs].filter((entry) => entry.root && entry.criticalRank >= 0).sort((a, b) => a.criticalRank - b.criticalRank)) admit(item, 1);
+  // Tier 2 — the root README plus any lockfiles a monorepo keeps per workspace.
+  for (const item of [...blobs].filter((entry) => /^(package|pnpm|yarn|bun|go|cargo|poetry|uv|pipfile)\.(lock|mod|sum|toml|yaml|json)$/i.test(entry.base) || /^(bun\.lockb|uv\.lock|go\.sum|cargo\.lock)$/.test(entry.base)).sort((a, b) => a.depth - b.depth)) admit(item, 2);
+  // Tier 3 — setup docs wherever they live, but never more than two of one name.
+  const rest = [...blobs]
+    .filter((entry) => !taken.has(entry.path))
+    .filter((entry) => /(^|\/)(readme|contributing|setup|install|getting-started|quickstart|develop|dockerfile|compose|\.env\.|makefile)/i.test(entry.base) || /\.(ya?ml|toml|json)$/i.test(entry.base))
+    .sort((a, b) => a.depth - b.depth || filePriority(a.path) - filePriority(b.path) || a.path.localeCompare(b.path));
+  for (const item of rest) { if (chosen.length >= MAX_SCAN_FILES) break; admit(item, 2); }
+  // Tier 4 — anything left, shallowest first.
+  for (const item of [...blobs].filter((entry) => !taken.has(entry.path)).sort((a, b) => a.depth - b.depth)) {
+    if (chosen.length >= MAX_SCAN_FILES) break;
+    admit(item, 1);
+  }
+  return chosen.map(({ base, depth, root, criticalRank, ...item }) => item).slice(0, MAX_SCAN_FILES);
+}
+
+/** When the git trees response is truncated, the root files may be missing from it. */
+const SUPPLEMENT_FILES = ['README.md', 'package.json', 'Dockerfile', 'docker-compose.yml', 'go.mod', 'pyproject.toml', 'requirements.txt', 'Makefile', '.env.example', 'Cargo.toml'];
+
+async function supplementTruncatedTree(repo, files, branch) {
+  const have = new Set(files.map((file) => String(file.path).toLowerCase().split('/').pop()));
+  const missing = SUPPLEMENT_FILES.filter((name) => !have.has(name.toLowerCase()));
+  if (!missing.length) return files;
+  const extra = await Promise.all(missing.slice(0, 8).map(async (name) => ({ name, content: await rawGithubHead(repo, name) })));
+  const found = extra.filter((entry) => entry.content).map((entry) => ({ path: entry.name, size: entry.content.length, type: 'blob', content: entry.content }));
+  return found.length ? [...found, ...files].slice(0, MAX_SCAN_FILES) : files;
 }
 
 function compactText(value, max = 4000) {
@@ -248,7 +323,7 @@ function heuristicGuide(repo, metadata, files) {
     hasGo ? 'Go modules declared in go.mod' : null,
     hasRust ? 'Rust crates declared in Cargo.toml' : null,
   ]);
-  const overview = `${repo.repo} is a ${metadata.language || 'software'} repository. Forgepath scanned ${files.length} setup-related files and found ${steps.length} actions to get it running locally.`;
+  const overview = `${repo.repo} is a ${metadata.language || 'software'} repository. Git-Up scanned ${files.length} setup-related files and found ${steps.length} actions to get it running locally.`;
   const readmeHint = readme.match(/(?:install|setup|getting started|quick start)[\s\S]{0,500}/i)?.[0]?.replace(/\s+/g, ' ').trim();
 
   return {
@@ -346,7 +421,7 @@ function heuristicPlainOverview(repo, metadata, files) {
         : 'It helps curious beginners, students, small teams, and busy people who want a working starting point they can learn from and change safely.',
     howItWorks: [
       `You make your own copy of the project, the way you would photocopy a recipe before scribbling on it.`,
-      `You follow the short ordered checklist in Forgepath from top to bottom — each tick is one small, visible win.`,
+      `You follow the short ordered checklist in Git-Up from top to bottom — each tick is one small, visible win.`,
       `${setupHint} When it runs, you open it in your browser or terminal and try it out, then change one small thing at a time.`,
     ],
   };
@@ -462,7 +537,7 @@ async function callAiInsight(config, repo, metadata, files, mode, question) {
     : mode === 'bugs'
       ? 'Audit logic and architecture for edge cases, vulnerabilities, and breakage-prone areas. Each bullet names the weak spot, how it shows up in plain words, and the fix-first hint. Concrete, file-aware, no fear-mongering.'
       : 'Recommend UX improvements, missing documentation, and untapped potential. Prioritise small, high-leverage wins a non-expert can understand. No jargon.';
-  const prompt = `You are Forgepath, a kind senior product engineer. Analyse this public GitHub repository and return ONLY valid JSON.\n\nJSON schema:\n{"title":"string","intro":"2-sentence plain-language intro","bullets":["4-6 specific bullets, each 1-3 sentences"],"outro":"one-sentence suggested first step","followUps":["follow-up question 1","follow-up question 2","follow-up question 3"]}\n\nRules:\n- Reference actual files/steps from the context (e.g. package.json scripts, missing tests, env handling).\n- Task (${mode}): ${question || meta.question}\n- ${modeBrief}\n- followUps must be 2–3 short, clickable, contextual questions that continue THIS topic, not generic filler.\n- Plain, warm tone. Avoid heavy jargon where possible.\n\nRepository: ${repo.canonicalUrl}\nMetadata: ${JSON.stringify({ name: metadata.name, description: metadata.description, language: metadata.language, default_branch: metadata.default_branch, topics: metadata.topics })}\n\nFiles:\n${files.map((f) => `--- ${f.path}\n${compactText(f.content, 4000)}`).join('\n')}`;
+  const prompt = `You are Git-Up, a kind senior product engineer. Analyse this public GitHub repository and return ONLY valid JSON.\n\nJSON schema:\n{"title":"string","intro":"2-sentence plain-language intro","bullets":["4-6 specific bullets, each 1-3 sentences"],"outro":"one-sentence suggested first step","followUps":["follow-up question 1","follow-up question 2","follow-up question 3"]}\n\nRules:\n- Reference actual files/steps from the context (e.g. package.json scripts, missing tests, env handling).\n- Task (${mode}): ${question || meta.question}\n- ${modeBrief}\n- followUps must be 2–3 short, clickable, contextual questions that continue THIS topic, not generic filler.\n- Plain, warm tone. Avoid heavy jargon where possible.\n\nRepository: ${repo.canonicalUrl}\nMetadata: ${JSON.stringify({ name: metadata.name, description: metadata.description, language: metadata.language, default_branch: metadata.default_branch, topics: metadata.topics })}\n\nFiles:\n${files.map((f) => `--- ${f.path}\n${compactText(f.content, 4000)}`).join('\n')}`;
   const response = await fetch(endpointUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
@@ -485,11 +560,15 @@ async function callAiInsight(config, repo, metadata, files, mode, question) {
   };
 }
 
-async function getRepoContext(repoUrl) {
-  const repo = normaliseRepoUrl(repoUrl);
+/** GitHub reads are rate limited and a session hits the same repo repeatedly
+ * (analyze, recover, insights), so the scan is memoised briefly. */
+const contextCache = new Map();
+
+async function scanRepositoryContext(repo) {
   let metadata;
   let files;
   let fullTreePaths = [];
+  let rawBlocked = false;
   try {
     metadata = await github(`/repos/${repo.apiPath}`);
     const branch = metadata.default_branch || 'main';
@@ -500,14 +579,32 @@ async function getRepoContext(repoUrl) {
     const tree = treePayload.tree || [];
     fullTreePaths = tree.filter((n) => n?.path).map((n) => n.path).filter((p) => !/(node_modules|\.git\/|dist\/|build\/|\.next\/)/i.test(p)).slice(0, 300);
     const selected = pickFiles(tree);
-    files = await Promise.all(selected.map(async (entry) => ({ ...entry, content: await rawGithub(`${repo.apiPath}/${entry.path}`, branch) })));
+    const contents = await Promise.all(selected.map((entry) => rawGithub(`${repo.apiPath}/${entry.path}`, branch)));
+    // Keep the file even when its body could not be read: the name alone carries
+    // real signal (lockfiles, Dockerfile, .env.example), and dropping it would
+    // throw away the whole scan just because one host was unreachable.
+    files = selected.map((entry, index) => ({ ...entry, content: contents[index] ?? '' }));
+    if (treePayload.truncated) files = await supplementTruncatedTree(repo, files, branch);
+    rawBlocked = Boolean(selected.length) && contents.every((content) => !content);
   } catch (error) {
     const fallback = await fallbackRepositoryScan(repo, error);
     metadata = fallback.metadata;
     files = fallback.files;
     fullTreePaths = files.map((f) => f.path);
+    rawBlocked = files.length > 0 && files.every((f) => !f.content);
   }
-  return { repo, metadata, files, fullTreePaths };
+  return { repo, metadata, files, fullTreePaths, rawBlocked };
+}
+
+async function getRepoContext(repoUrl, { refresh = false } = {}) {
+  const probe = normaliseRepoUrl(repoUrl);
+  if (!refresh) {
+    const hit = contextCache.get(probe.canonicalUrl);
+    if (hit && Date.now() - hit.at < CONTEXT_TTL_MS) return hit.value;
+  }
+  const value = await scanRepositoryContext(probe);
+  contextCache.set(probe.canonicalUrl, { at: Date.now(), value });
+  return value;
 }
 
 function parseAiJson(text) {
@@ -524,7 +621,7 @@ async function callAi(config, repo, metadata, files) {
   const base = String(config.baseUrl).replace(/\/$/, '');
   const endpointValue = String(config.endpoint || '/chat/completions');
   const endpointUrl = /^https?:\/\//i.test(endpointValue) ? endpointValue : `${base}${endpointValue.startsWith('/') ? endpointValue : `/${endpointValue}`}`;
-  const prompt = `You are Forgepath, a meticulous senior developer advocate who can also explain anything to a 12-year-old. Analyze this public GitHub repository and return only valid JSON. Do not invent commands or requirements. Use the repository files as your source of truth. If uncertain, say so in notes.\n\nJSON schema:\n{\"summary\":\"string\",\"confidence\":\"high|medium|low\",\"dependencies\":[{\"name\":\"string\",\"version\":\"string|null\",\"kind\":\"runtime|dev|tooling|service\"}],\"requirements\":[\"string\"],\"environment\":[\"ENV_KEY\"],\"steps\":[{\"id\":\"stable-id\",\"title\":\"action title\",\"command\":\"shell commands or empty string\",\"detail\":\"what to do\"}],\"explanations\":[{\"stepId\":\"matching step id\",\"title\":\"short title\",\"body\":\"why this matters\"}],\"notes\":[\"caveat\"],\"plainOverview\":{\"analogy\":\"one vivid real-world analogy sentence\",\"problem\":\"what everyday problem this solves, zero jargon\",\"audience\":\"who benefits, in everyday roles\",\"howItWorks\":[\"step 1 in plain words\",\"step 2\",\"step 3\"]},\"followUps\":[\"contextual follow-up question 1\",\"question 2\",\"question 3\"]}\n\nSTRICT plainOverview rules (never break these):\n- ZERO technical jargon. Never use: API, endpoints, serialization, dependencies, CI/CD, manifest, lockfile, toolchain, middleware, SDK, CLI, interface, schema, runtime, framework, repository (say \"project\" instead).\n- Write at a 12-year-old reading level. Use real-world analogies (kitchen, recipe box, library, workshop, garden, lunchbox, toolbox).\n- Cover exactly: what everyday problem it solves, who benefits (parents, teachers, shop owners, students…), how it works from a visitor's point of view in 3 short steps.\n- followUps: 2–3 short clickable questions specific to THIS project (e.g. ideas to build next, what to be careful about). Never generic filler.\n\nRepository: ${repo.canonicalUrl}\nMetadata: ${JSON.stringify({ name: metadata.name, description: metadata.description, language: metadata.language, default_branch: metadata.default_branch, topics: metadata.topics })}\n\nFiles:\n${files.map((file) => `--- ${file.path}\n${compactText(file.content, 5000)}`).join('\n')}`;
+  const prompt = `You are Git-Up, a meticulous senior developer advocate who can also explain anything to a 12-year-old. Analyze this public GitHub repository and return only valid JSON. Do not invent commands or requirements. Use the repository files as your source of truth. If uncertain, say so in notes.\n\nJSON schema:\n{\"summary\":\"string\",\"confidence\":\"high|medium|low\",\"dependencies\":[{\"name\":\"string\",\"version\":\"string|null\",\"kind\":\"runtime|dev|tooling|service\"}],\"requirements\":[\"string\"],\"environment\":[\"ENV_KEY\"],\"steps\":[{\"id\":\"stable-id\",\"title\":\"action title\",\"command\":\"shell commands or empty string\",\"detail\":\"what to do\"}],\"explanations\":[{\"stepId\":\"matching step id\",\"title\":\"short title\",\"body\":\"why this matters\"}],\"notes\":[\"caveat\"],\"anticipatedFailures\":[{\"signature\":\"short label of the failure\",\"stepId\":\"which step id it breaks\",\"symptom\":\"error text people actually paste\",\"fix\":\"the command or action that avoids it\"}],\"plainOverview\":{\"analogy\":\"one vivid real-world analogy sentence\",\"problem\":\"what everyday problem this solves, zero jargon\",\"audience\":\"who benefits, in everyday roles\",\"howItWorks\":[\"step 1 in plain words\",\"step 2\",\"step 3\"]},\"followUps\":[\"contextual follow-up question 1\",\"question 2\",\"question 3\"]}\n\nInstall-path rules (never break these):\n- steps[].id must be chosen from this vocabulary when the action matches it: clone, toolchain, services, docker, dependencies, database, env, build, dev, run, verify. Reuse the same id for the same action across revisions so progress is not lost.\n- steps[].order is an integer 0-90 placing the step in the sequence; steps with the same action must keep the same order slot.\n- anticipatedFailures: the 2-4 ways installers most often break for THIS repository, each pointing at the step id it breaks. Base them on the README, lockfiles, and Dockerfile — not on generic advice. Return an empty array if nothing specific is known.\n\nSTRICT plainOverview rules (never break these):\n- ZERO technical jargon. Never use: API, endpoints, serialization, dependencies, CI/CD, manifest, lockfile, toolchain, middleware, SDK, CLI, interface, schema, runtime, framework, repository (say \"project\" instead).\n- Write at a 12-year-old reading level. Use real-world analogies (kitchen, recipe box, library, workshop, garden, lunchbox, toolbox).\n- Cover exactly: what everyday problem it solves, who benefits (parents, teachers, shop owners, students…), how it works from a visitor's point of view in 3 short steps.\n- followUps: 2–3 short clickable questions specific to THIS project (e.g. ideas to build next, what to be careful about). Never generic filler.\n\nRepository: ${repo.canonicalUrl}\nMetadata: ${JSON.stringify({ name: metadata.name, description: metadata.description, language: metadata.language, default_branch: metadata.default_branch, topics: metadata.topics })}\n\nFiles:\n${files.map((file) => `--- ${file.path}\n${compactText(file.content, 5000)}`).join('\n')}`;
   const response = await fetch(endpointUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
@@ -553,7 +650,8 @@ function normaliseGuide(guide, repo, metadata, files, source = 'local-scan', ful
     dependencies: Array.isArray(guide?.dependencies) && guide.dependencies.length ? guide.dependencies : fallback.dependencies,
     requirements: Array.isArray(guide?.requirements) && guide.requirements.length ? guide.requirements : fallback.requirements,
     environment: Array.isArray(guide?.environment) ? guide.environment : fallback.environment,
-    steps: Array.isArray(guide?.steps) && guide.steps.length ? guide.steps.map((step, index) => ({ id: step.id || `step-${index + 1}`, title: step.title || `Installation step ${index + 1}`, command: step.command || '', detail: step.detail || '' })) : fallback.steps,
+    steps: decorateSteps(Array.isArray(guide?.steps) && guide.steps.length ? guide.steps.map((step, index) => ({ ...step, id: String(step.id || `step-${index + 1}`), title: step.title || `Installation step ${index + 1}`, command: step.command || '', detail: step.detail || '' })) : fallback.steps, 'base'),
+    anticipatedFailures: Array.isArray(guide?.anticipatedFailures) ? guide.anticipatedFailures.filter((item) => item && (item.signature || item.symptom)).slice(0, 6).map((item) => ({ signature: String(item.signature || '').slice(0, 90), stepId: String(item.stepId || ''), symptom: String(item.symptom || '').slice(0, 240), fix: String(item.fix || '').slice(0, 240) })) : [],
     explanations: Array.isArray(guide?.explanations) ? guide.explanations : fallback.explanations,
     notes: Array.isArray(guide?.notes) ? guide.notes : fallback.notes,
     files: files.map((file) => file.path),
@@ -564,15 +662,153 @@ function normaliseGuide(guide, repo, metadata, files, source = 'local-scan', ful
 }
 
 async function analyzeRepository(body) {
-  const { repo, metadata, files, fullTreePaths } = await getRepoContext(body.repoUrl);
+  const expertise = EXPERTISE_LEVELS.some((level) => level.id === body?.expertise) ? body.expertise : 'some';
+  const { repo, metadata, files, fullTreePaths, rawBlocked } = await getRepoContext(body.repoUrl);
   let scanNotice = '';
   if ((files.length <= 2) && fullTreePaths.length <= 2) scanNotice = '';
   const aiGuide = body.config ? await callAi(body.config, repo, metadata, files) : null;
   const guide = normaliseGuide(aiGuide, repo, metadata, files, aiGuide ? 'ai' : 'local-scan', fullTreePaths);
-  if (scanNotice && !guide.notes.includes(scanNotice)) guide.notes.unshift(scanNotice);
-  // Surface a lightweight notice when the full GitHub tree was unavailable.
-  if (!fullTreePaths.length) guide.notes.unshift('Full folder listing was unavailable; showing inspected setup files only.');
-  return guide;
+
+  // Feature 2 → read the repository's own failure history before shaping the path.
+  const failureScan = await scanInstallFailures({ repo, metadata, files, github, token: process.env.GITHUB_TOKEN });
+  mergeAnticipatedFailures(guide, failureScan);
+
+  // Feature 6 → health score from the same evidence, with no model involvement.
+  const ci = await fetchCiSignal({ repo, github, metadata });
+  const health = computeHealth({ repo, metadata, files, failureScan, ci });
+
+  // Feature 3 → decision graph; Feature 2's findings folded into the steps.
+  const packageManager = detectPackageManager(files);
+  const scripts = parseJsonFile(files, 'package.json')?.scripts || {};
+  const patched = patchStepsForFailures(guide.steps, failureScan);
+  guide.steps = patched.steps;
+  guide.pathGraph = buildPathGraph({ repo, metadata, files, packageManager, scripts, failureScan });
+  guide.defaultPath = composeSteps(guide.steps, guide.pathGraph, guide.pathGraph.defaults);
+  guide.failurePatches = patched.patches;
+  guide.pathPatches = patchNotesFor(failureScan, guide.steps);
+
+  // Feature 4 → the contract, built after health so its caps can appear as terms.
+  guide.contract = buildContract({ repo, metadata, files, steps: guide.defaultPath, health, failureScan, source: guide.source });
+  guide.health = health;
+  guide.failureScan = slimFailureScan(failureScan);
+  guide.verdict = healthVerdict(health);
+  guide.session = { revision: 1, startedAt: new Date().toISOString(), checked: {}, failures: [], revisions: [] };
+  guide.expertiseOptions = EXPERTISE_LEVELS;
+
+  // Feature 5 → reshape explanation depth and warning volume for this reader.
+  guide.tuning = { steps: guide.steps, notes: guide.notes, plainOverview: guide.plainOverview, notesWithSeverity: undefined };
+  const tuned = tuneGuide(guide, expertise);
+
+  if (rawBlocked) tuned.notes.unshift('File contents could not be downloaded from this network, so the scan used the repository’s file names only. Versions and dependency counts in the contract are therefore unavailable rather than wrong.');
+  if (scanNotice && !tuned.notes.includes(scanNotice)) tuned.notes.unshift(scanNotice);
+  if (!fullTreePaths.length) tuned.notes.unshift('Full folder listing was unavailable; showing inspected setup files only.');
+  return tuned;
+}
+
+function slugify(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
+}
+
+/** Fold AI-predicted failures into the ranked list, labelled as predictions. */
+function mergeAnticipatedFailures(guide, failureScan) {
+  const predicted = Array.isArray(guide?.anticipatedFailures) ? guide.anticipatedFailures : [];
+  if (!predicted.length) return;
+  const known = new Set((failureScan.patterns || []).map((pattern) => String(pattern.id || '')));
+  const extra = predicted
+    .filter((item) => item.signature && !known.has(slugify(item.signature)))
+    .slice(0, 3)
+    .map((item, index) => ({
+      rank: (failureScan.patterns?.length || 0) + index + 1,
+      id: slugify(item.signature) || `predicted-${index + 1}`,
+      label: item.signature,
+      why: item.symptom || 'Predicted from the repository files.',
+      patchStepId: item.stepId || undefined,
+      commands: item.fix ? [item.fix] : [],
+      count: 0,
+      openCount: 0,
+      weight: 1,
+      origin: 'predicted',
+      threads: [],
+    }));
+  if (!extra.length) return;
+  failureScan.patterns = [...(failureScan.patterns || []), ...extra].slice(0, 6).map((pattern, position) => ({ ...pattern, rank: position + 1 }));
+}
+
+/** Trim thread evidence so a persisted guide stays light in localStorage. */
+function slimFailureScan(scan) {
+  return {
+    available: Boolean(scan?.available),
+    notice: scan?.notice || '',
+    sources: scan?.sources || {},
+    sampled: scan?.sampled || {},
+    totalThreads: scan?.totalThreads || 0,
+    installRelated: scan?.installRelated || 0,
+    openIssuesTotal: scan?.openIssuesTotal || 0,
+    patterns: (scan?.patterns || []).map((pattern) => ({
+      rank: pattern.rank,
+      id: pattern.id,
+      label: pattern.label,
+      why: pattern.why,
+      origin: pattern.origin,
+      count: pattern.count,
+      openCount: pattern.openCount,
+      patchStepId: pattern.patchStepId,
+      commands: (pattern.commands || []).slice(0, 2),
+      threads: (pattern.threads || []).slice(0, 3).map((thread) => ({ number: thread.number, title: thread.title, url: thread.url, state: thread.state, isPr: thread.isPr, comments: thread.comments })),
+    })),
+  };
+}
+
+/** Never trust client-supplied step objects wholesale. */
+function sanitiseStepList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 40).map((entry, index) => ({
+    id: String(entry?.id || `step-${index + 1}`).slice(0, 60),
+    key: String(entry?.key || entry?.id || `step-${index + 1}`).slice(0, 60),
+    title: String(entry?.title || '').slice(0, 160),
+    command: String(entry?.command || '').slice(0, 4000),
+    detail: String(entry?.detail || '').slice(0, 800),
+    order: Number.isFinite(Number(entry?.order)) ? Number(entry.order) : (index + 1) * 10,
+  }));
+}
+
+/**
+ * Feature 1 endpoint: a step failed, the user pasted what happened, and the path
+ * from that step onward is rebuilt. Completed steps are never returned.
+ */
+async function analyzeRecovery(body) {
+  const failedStepId = String(body?.failedStepId || '').slice(0, 60);
+  const errorText = String(body?.errorText || '').slice(0, 12_000);
+  if (!body?.repoUrl) throw new Error('A repository URL is required to recover a failed step.');
+  const { repo, metadata, files } = await getRepoContext(body.repoUrl, { refresh: Boolean(body.refresh) });
+  const guide = body.guide && typeof body.guide === 'object' ? body.guide : {};
+  const completed = sanitiseStepList(body.completedSteps);
+  const remaining = sanitiseStepList(body.remainingSteps);
+  const failedStep = completed.find((entry) => entry.id === failedStepId)
+    || remaining.find((entry) => entry.id === failedStepId)
+    || sanitiseStepList(guide.steps).find((entry) => entry.id === failedStepId)
+    || { id: failedStepId || 'failed-step', title: 'The failed step', command: '', detail: '' };
+  const expertise = EXPERTISE_LEVELS.some((level) => level.id === body?.expertise) ? body.expertise : 'some';
+  const recovery = await recoverPath({
+    config: body.config?.apiKey && body.config?.model ? body.config : null,
+    repo,
+    metadata,
+    files,
+    failedStep,
+    errorText,
+    remainingSteps: remaining.length ? remaining : [failedStep],
+    completedSteps: completed,
+    requirements: Array.isArray(guide.requirements) ? guide.requirements.slice(0, 8) : [],
+    expertise,
+    failureScan: guide.failureScan,
+  });
+  return {
+    ...recovery,
+    failedStep,
+    revision: Number(body?.revision || 1) + 1,
+    repository: { canonicalUrl: repo.canonicalUrl, name: metadata?.name || repo.repo },
+    generatedAt: new Date().toISOString(),
+  };
 }
 
 async function analyzeInsight(body) {
@@ -602,7 +838,7 @@ async function analyzeInsight(body) {
   fallback.mode = mode;
   if (mode === 'custom' && question) {
     fallback.title = `Answer: ${question.slice(0, 80)}`;
-    fallback.intro = `Here is a down-to-earth take on “${question}” for this project, based on the files Forgepath could see. Connect an AI provider in the top-right settings for a deeper file-aware answer.`;
+    fallback.intro = `Here is a down-to-earth take on “${question}” for this project, based on the files Git-Up could see. Connect an AI provider in the top-right settings for a deeper file-aware answer.`;
   }
   return fallback;
 }
@@ -632,7 +868,8 @@ async function handleApi(req, res, pathname) {
     if (req.method === 'POST' && pathname === '/api/analyze') return sendJson(res, 200, { ok: true, guide: await analyzeRepository(body) });
     if (req.method === 'POST' && pathname === '/api/insight') return sendJson(res, 200, { ok: true, insight: await analyzeInsight(body) });
     if (req.method === 'POST' && pathname === '/api/models') return sendJson(res, 200, { ok: true, models: await fetchModels(body) });
-    if (req.method === 'GET' && pathname === '/api/health') return sendJson(res, 200, { ok: true, service: 'forgepath' });
+    if (req.method === 'POST' && pathname === '/api/recover') return sendJson(res, 200, { ok: true, recovery: await analyzeRecovery(body) });
+    if (req.method === 'GET' && pathname === '/api/health') return sendJson(res, 200, { ok: true, service: 'git-up', version: '2.0', features: FEATURE_FLAGS, githubToken: Boolean(process.env.GITHUB_TOKEN) });
     return sendJson(res, 404, { ok: false, error: 'Not found.' });
   } catch (error) {
     return sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : 'Something went wrong.' });
@@ -668,6 +905,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   const preview = process.env.E2B_SANDBOX_ID ? `https://${PORT}-${process.env.E2B_SANDBOX_ID}.e2b.app` : `http://localhost:${PORT}`;
-  console.log(`Forgepath listening on ${preview}`);
+  console.log(`Git-Up listening on ${preview}`);
   console.log(`Bound to ${HOST}:${PORT} for local and preview traffic.`);
 });

@@ -399,6 +399,9 @@ textarea.text-field { height: auto; }
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 
+.skip-link { position: absolute; top: -100px; left: 16px; z-index: 100; padding: 8px 14px; color: var(--bg-deep); background: var(--route); border-radius: 0 0 8px 8px; font-size: 11px; font-weight: 800; text-decoration: none; transition: top var(--dur-instant) var(--ease); }
+.skip-link:focus { top: 0; }
+
 /* --- Feature 1: plain-English overview --- */
 .plain-panel { margin-bottom: 21px; border-color: rgba(127, 224, 178, .2); }
 .plain-body { padding: 17px 20px 20px; }
@@ -737,3 +740,15 @@ textarea.text-field { height: auto; }
   .step-check { position: absolute; top: 12px; right: 8px; margin: 0; min-width: 32px; width: 32px; height: 32px; }
   .step-body { padding-right: 34px; }
 }
+
+/* Mobile bottom navigation — provides section switching on small screens where the sidebar is hidden. */
+.mobile-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; z-index: 50; padding: 6px 8px; padding-bottom: max(6px, env(safe-area-inset-bottom)); background: rgba(11, 17, 20, .94); backdrop-filter: blur(14px); border-top: 1px solid var(--line); }
+.mobile-nav-item { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 44px; min-width: 44px; flex: 1; padding: 6px 4px; color: var(--muted-2); background: transparent; border: 0; border-radius: 8px; font-size: 9px; font-weight: 700; transition: color var(--dur-instant) var(--ease), background var(--dur-instant) var(--ease); }
+.mobile-nav-item:hover, .mobile-nav-item:active { color: var(--route); background: var(--route-dim); }
+@media (max-width: 600px) {
+  .mobile-nav { display: flex; }
+  .main { padding-bottom: 72px; }
+}
+
+/* Focus-visible ring for interactive SVG graph nodes. */
+.graph-hit:focus-visible rect { stroke: var(--route); stroke-width: 2; outline: none; }

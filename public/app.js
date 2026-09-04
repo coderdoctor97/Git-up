@@ -71,10 +71,9 @@ const savedHistory = (Array.isArray(rawHistory) ? rawHistory : []).map((entry) =
   label: entry.label || '',
   analyzedAt: entry.analyzedAt,
   guide: entry.guide,
-  // The living install session has to survive the load, or “resume where you left
-  // off” silently degrades to a fresh checklist on every refresh.
   session: entry.session && typeof entry.session === 'object' ? entry.session : null,
 })).filter((entry) => entry.url && entry.guide);
+
 const state = {
   mode: 'empty',
   repoUrl: '',
@@ -992,6 +991,9 @@ function toggleContractItem(id) {
 }
 
 function closeModal() {
+  // Clean up any focus trap from the outgoing modal.
+  const oldModal = root.querySelector('.modal[aria-modal="true"]');
+  if (oldModal?._trapHandler) { document.removeEventListener('keydown', oldModal._trapHandler); oldModal._trapHandler = null; }
   state.modal = null;
   render();
   if (state.lastFocusId) {
@@ -1001,13 +1003,46 @@ function closeModal() {
   }
 }
 
+/** Keep Tab / Shift+Tab inside the currently open modal. */
+function trapFocus() {
+  const modal = root.querySelector('.modal[aria-modal="true"]');
+  if (!modal) return;
+  const focusable = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const handler = (event) => {
+    if (event.key !== 'Tab') return;
+    if (event.shiftKey) { if (document.activeElement === first) { event.preventDefault(); last.focus(); } }
+    else { if (document.activeElement === last) { event.preventDefault(); first.focus(); } }
+  };
+  document.addEventListener('keydown', handler);
+  first?.focus?.();
+  // Store the handler so it can be removed on close (leak is bounded by re-render).
+  modal._trapHandler = handler;
+}
+
+function mobileBottomNav() {
+  const isAnalysis = state.mode === 'analysis' && state.guide;
+  const items = [
+    { id: 'nav-route', label: 'Route', icon: 'route', action: 'scroll-path', show: isAnalysis },
+    { id: 'nav-graph', label: 'Graph', icon: 'grid', action: 'scroll-graph', show: isAnalysis },
+    { id: 'nav-contract', label: 'Contract', icon: 'shield', action: 'scroll-contract', show: isAnalysis },
+    { id: 'nav-settings', label: 'AI', icon: 'settings', action: 'settings', show: true },
+  ];
+  const visible = items.filter((item) => item.show);
+  return `<nav class="mobile-nav" aria-label="Mobile sections">${visible.map((item) => `<button class="mobile-nav-item" data-action="${item.action}" aria-label="${item.label}">${icon(item.icon, 18)}<span>${item.label}</span></button>`).join('')}</nav>`;
+}
+
 function render() {
   let content = '';
-  if (state.mode === 'loading') content = `<main class="main">${repoForm()}${loadingView()}</main>`;
-  else if (state.mode === 'analysis' && state.guide) content = `<main class="main">${repoForm()}${analysisView()}</main>`;
-  else content = `<main class="main">${emptyView()}</main>`;
-  root.innerHTML = `<div class="app-shell">${topbar()}<div class="layout">${sidebar()}${content}</div>${state.modal === 'settings' ? settingsModal() : ''}${state.modal === 'install' ? installModal() : ''}${state.modal === 'failure' ? failureModal() : ''}${toastHtml()}<div class="sr-only" aria-live="polite">${esc(liveSummary())}</div></div>`;
+  if (state.mode === 'loading') content = `<main class="main" id="main-content">${repoForm()}${loadingView()}</main>`;
+  else if (state.mode === 'analysis' && state.guide) content = `<main class="main" id="main-content">${repoForm()}${analysisView()}</main>`;
+  else content = `<main class="main" id="main-content">${emptyView()}</main>`;
+  const mobileNav = state.mode !== 'loading' ? mobileBottomNav() : '';
+  root.innerHTML = `<div class="app-shell">${topbar()}<div class="layout">${sidebar()}${content}</div>${mobileNav}${state.modal === 'settings' ? settingsModal() : ''}${state.modal === 'install' ? installModal() : ''}${state.modal === 'failure' ? failureModal() : ''}${toastHtml()}<div class="sr-only" aria-live="polite">${esc(liveSummary())}</div></div>`;
   bindEvents();
+  if (state.modal) trapFocus();
 }
 
 /** Short screen-reader summary of the current route state. */
@@ -1261,10 +1296,14 @@ function bindEvents() {
   document.querySelectorAll('[data-contract-id]').forEach((el) => el.addEventListener('change', (event) => toggleContractItem(event.target.dataset.contractId)));
   document.querySelectorAll('[data-action="ask-failure"]').forEach((el) => el.addEventListener('click', () => {
     const pattern = (state.guide?.failureScan?.patterns || []).find((entry) => entry.id === el.dataset.failure);
-    if (pattern) runInsight('custom', `Why does “${pattern.label}” break this install, and what is the exact fix for my setup?`, 'bugs');
+    if (pattern) runInsight('custom', `Why does "${pattern.label}" break this install, and what is the exact fix for my setup?`, 'bugs');
   }));
   document.querySelector('#explanation-select')?.addEventListener('change', (event) => { state.explanationIndex = Number(event.target.value); render(); });
   document.querySelectorAll('[data-copy]').forEach((el) => el.addEventListener('click', () => copyText(el.dataset.copy)));
+  // Mobile bottom nav actions
+  document.querySelectorAll('[data-action="scroll-path"]').forEach((el) => el.addEventListener('click', () => { document.querySelector('#route-path')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
+  document.querySelectorAll('[data-action="scroll-graph"]').forEach((el) => el.addEventListener('click', () => { document.querySelector('#route-graph')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
+  document.querySelectorAll('[data-action="scroll-contract"]').forEach((el) => el.addEventListener('click', () => { document.querySelector('#route-contract')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
 }
 
 function saveRename(id) {

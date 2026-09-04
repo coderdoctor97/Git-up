@@ -1,4 +1,5 @@
 import { composeSteps, keyOf, progressOf, applyRevision, revisionEntry, selectionsLabel, EXPERTISE_LEVELS, tuneGuide } from './path-engine.js';
+import { bindSpotlight, bindTickers } from './magic.js';
 
 const root = document.querySelector('#app');
 
@@ -38,6 +39,8 @@ const icons = {
   chat: '<path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H9l-5 4V6.5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
   route: '<circle cx="6" cy="19" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="18" cy="5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8.4 19H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
   flag: '<path d="M5 21V4m0 1h12l-2.5 3.5L17 12H5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+  sun: '<circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5 5l1.6 1.6M17.4 17.4 19 19M19 5l-1.6 1.6M6.6 17.4 5 19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+  moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
 };
 function icon(name, size = 17, className = '') { return `<svg class="${className}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" aria-hidden="true">${icons[name] || icons.info}</svg>`; }
 function esc(value) {
@@ -63,6 +66,9 @@ function loadJson(key, fallback) { try { const v = JSON.parse(localStorage.getIt
 function displayName(entry) { return (entry?.label || '').trim() || entry?.name || entry?.url || 'Repository'; }
 function persistHistory() { try { localStorage.setItem('git-up-history', JSON.stringify(state.history.slice(0, 20))); } catch { /* ignore */ } }
 const savedSettings = loadJson('git-up-settings', {});
+let savedTheme = 'dark';
+try { savedTheme = localStorage.getItem('git-up-theme') || 'dark'; } catch { /* ignore */ }
+if (savedTheme !== 'light' && savedTheme !== 'dark') savedTheme = 'dark';
 const rawHistory = loadJson('git-up-history', []);
 const savedHistory = (Array.isArray(rawHistory) ? rawHistory : []).map((entry) => ({
   id: entry.id || uid(),
@@ -112,6 +118,8 @@ const state = {
   renameDraft: '',
   expandedDirs: {},
   treeFilter: '',
+  // Daylight / dark mode
+  theme: savedTheme,
 };
 
 function hasAiConfig() { return Boolean(state.settings.baseUrl && state.settings.apiKey && state.settings.model); }
@@ -137,6 +145,7 @@ function errorKindOf(message) {
 
 function topbar() {
   const aiReady = hasAiConfig();
+  const toLight = state.theme !== 'light';
   return `<header class="topbar">
     <a class="brand" href="#" data-action="new-analysis" aria-label="Git-Up home">
       <span class="brand-mark">${icon('mark', 19)}</span><span class="brand-word">git-<em>up</em></span>
@@ -145,6 +154,7 @@ function topbar() {
     <div class="topbar-center"><span>Route</span><span class="slash">/</span><strong>${state.mode === 'analysis' ? esc(displayName({ label: '', name: shortName(state.guide) })) : 'New analysis'}</strong></div>
     <div class="topbar-actions">
       <div class="connection-pill"><i class="status-dot ${aiReady ? 'online' : ''}"></i><span>${aiReady ? 'AI connected' : 'Local scan ready'}</span></div>
+      <button class="icon-button" data-action="theme" aria-label="${toLight ? 'Switch to daylight mode' : 'Switch to dark mode'}" title="${toLight ? 'Daylight mode' : 'Dark mode'}">${icon(toLight ? 'sun' : 'moon', 18)}</button>
       <button class="icon-button" data-action="settings" aria-label="Open AI settings" title="AI settings">${icon('settings', 18)}</button>
     </div>
   </header>`;
@@ -406,7 +416,7 @@ function explorerSection() {
   return `<section class="panel explorer-panel" aria-labelledby="explorer-title">
     <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('spark', 15)}</div><div><h3 id="explorer-title">Curious Explorer</h3><p class="panel-subtitle">One click, three specialist lenses — works instantly, deeper with AI connected. Never part of the install path.</p></div></div></div>
     <div class="explorer-body"><div class="explorer-grid">${buttons}</div>
-    <form class="insight-custom" id="insight-custom"><label for="insight-question">Ask your own question about this repository</label><div class="insight-custom-row"><input class="text-field" id="insight-question" value="${esc(state.insightQuestion)}" placeholder="For example: does this need a database?" maxlength="300" autocomplete="off" /><select class="select-field" id="insight-base" aria-label="Answer lens"><option value="recommendations" ${state.insightBase === 'recommendations' ? 'selected' : ''}>Recommendations lens</option><option value="features" ${state.insightBase === 'features' ? 'selected' : ''}>Features lens</option><option value="bugs" ${state.insightBase === 'bugs' ? 'selected' : ''}>Bugs lens</option></select><button class="secondary-button" type="submit" ${loading ? 'disabled' : ''}>Ask</button></div></form>
+    <form class="insight-custom" id="insight-custom"><label for="insight-question">Ask your own question about this repository</label><div class="insight-custom-row"><input class="text-field" id="insight-question" value="${esc(state.insightQuestion)}" placeholder="For example: does this need a database?" maxlength="2000" autocomplete="off" /><select class="select-field" id="insight-base" aria-label="Answer lens"><option value="recommendations" ${state.insightBase === 'recommendations' ? 'selected' : ''}>Recommendations lens</option><option value="features" ${state.insightBase === 'features' ? 'selected' : ''}>Features lens</option><option value="bugs" ${state.insightBase === 'bugs' ? 'selected' : ''}>Bugs lens</option></select><button class="secondary-button" type="submit" ${loading ? 'disabled' : ''}>Ask</button></div></form>
     ${result}${!state.insight && !loading ? followUpChips(guideFollowUps, 'recommendations') : ''}</div>
   </section>`;
 }
@@ -604,7 +614,7 @@ function scoreRing(score, tone) {
   return `<svg class="ring" viewBox="0 0 64 64" role="img" aria-label="Install health ${score} out of 100">
     <circle class="ring-track" cx="32" cy="32" r="${radius}"></circle>
     <circle class="ring-fill tone-${tone}" cx="32" cy="32" r="${radius}" stroke-dasharray="${circumference.toFixed(1)}" stroke-dashoffset="${offset.toFixed(1)}" transform="rotate(-90 32 32)"></circle>
-    <text class="ring-value" x="32" y="30" text-anchor="middle">${score}</text>
+    <text class="ring-value" data-ticker data-ticker-to="${score}" x="32" y="30" text-anchor="middle">${score}</text>
     <text class="ring-max" x="32" y="43" text-anchor="middle">/100</text>
   </svg>`;
 }
@@ -1040,6 +1050,7 @@ function render() {
   else if (state.mode === 'analysis' && state.guide) content = `<main class="main" id="main-content">${repoForm()}${analysisView()}</main>`;
   else content = `<main class="main" id="main-content">${emptyView()}</main>`;
   const mobileNav = state.mode !== 'loading' ? mobileBottomNav() : '';
+  try { if (typeof document !== 'undefined' && document.documentElement) document.documentElement.setAttribute('data-theme', state.theme === 'light' ? 'light' : 'dark'); } catch { /* ignore */ }
   root.innerHTML = `<div class="app-shell">${topbar()}<div class="layout">${sidebar()}${content}</div>${mobileNav}${state.modal === 'settings' ? settingsModal() : ''}${state.modal === 'install' ? installModal() : ''}${state.modal === 'failure' ? failureModal() : ''}${toastHtml()}<div class="sr-only" aria-live="polite">${esc(liveSummary())}</div></div>`;
   bindEvents();
   if (state.modal) trapFocus();
@@ -1198,6 +1209,11 @@ function bindEvents() {
   document.querySelector('#settings-form')?.addEventListener('submit', saveSettings);
   document.querySelectorAll('[data-action="new-analysis"]').forEach((el) => el.addEventListener('click', (e) => { e.preventDefault(); newAnalysis(); }));
   document.querySelectorAll('[data-action="settings"]').forEach((el) => el.addEventListener('click', () => { state.lastFocusId = 'settings'; state.modal = 'settings'; render(); setTimeout(() => document.querySelector('#base-url')?.focus(), 30); }));
+  document.querySelectorAll('[data-action="theme"]').forEach((el) => el.addEventListener('click', () => {
+    state.theme = state.theme === 'light' ? 'dark' : 'light';
+    try { localStorage.setItem('git-up-theme', state.theme); } catch { /* ignore */ }
+    render();
+  }));
   document.querySelectorAll('[data-action="close-modal"]').forEach((el) => el.addEventListener('click', closeModal));
   document.querySelectorAll('[data-action="close-on-backdrop"]').forEach((el) => el.addEventListener('click', (event) => { if (event.target === el) closeModal(); }));
   document.querySelectorAll('[data-action="install"]').forEach((el) => el.addEventListener('click', () => { state.lastFocusId = 'install'; state.modal = 'install'; render(); }));
@@ -1304,6 +1320,9 @@ function bindEvents() {
   document.querySelectorAll('[data-action="scroll-path"]').forEach((el) => el.addEventListener('click', () => { document.querySelector('#route-path')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
   document.querySelectorAll('[data-action="scroll-graph"]').forEach((el) => el.addEventListener('click', () => { document.querySelector('#route-graph')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
   document.querySelectorAll('[data-action="scroll-contract"]').forEach((el) => el.addEventListener('click', () => { document.querySelector('#route-contract')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
+  // Magic UI ports: cursor spotlight on cards, count-up tickers (re-bind each render).
+  bindSpotlight(document);
+  bindTickers(document);
 }
 
 function saveRename(id) {

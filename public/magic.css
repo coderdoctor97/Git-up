@@ -1,0 +1,79 @@
+/* ===========================================================================
+   Git-Up — Magic UI ports (vanilla CSS/JS, no dependencies)
+   Techniques adapted from skills/magicui: shimmer-button, magic-card
+   (spotlight), number-ticker, dot-pattern. Loaded after styles.css so these
+   rules layer on top; nothing in styles.css is modified.
+   Every effect is theme-aware (dark + [data-theme="light"]) and disabled
+   under prefers-reduced-motion, matching the existing pattern.
+   =========================================================================== */
+
+/* Smooth cursor trailing for the spotlight (unsupported browsers ignore). */
+@property --mx { syntax: '<length>'; inherits: false; initial-value: -300px; }
+@property --my { syntax: '<length>'; inherits: false; initial-value: -300px; }
+
+/* --- 1. Shimmer sweep on the primary CTAs (shimmer-button technique) --------
+   Selector-based so no template changes are needed. The sheen is a skewed
+   white gradient that sweeps across the button every few seconds. */
+.analyze-button, .install-button, .new-analysis {
+  position: relative;
+  overflow: hidden;
+}
+.analyze-button::after, .install-button::after, .new-analysis::after {
+  content: '';
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: -70%;
+  width: 45%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, .45), transparent);
+  transform: skewX(-20deg);
+  pointer-events: none;
+  animation: magic-sheen 4s ease-in-out infinite;
+}
+.analyze-button:hover::after, .install-button:hover::after, .new-analysis:hover::after {
+  animation-duration: 2.2s;
+}
+@keyframes magic-sheen {
+  0% { left: -70%; }
+  55%, 100% { left: 140%; }
+}
+
+/* --- 2. Card spotlight (magic-card gradient mode, vanilla port) -------------
+   A radial mint glow follows the cursor. Painted as a background-image layer
+   so it always sits below content. Position defaults off-element so nothing
+   shows until the first pointermove. */
+.panel, .seg-option, .explorer-btn, .route-preview, .route-status {
+  background-image: radial-gradient(240px circle at var(--mx, -300px) var(--my, -300px), rgba(127, 224, 178, .12), transparent 70%);
+  background-repeat: no-repeat;
+  transition: --mx .18s ease-out, --my .18s ease-out;
+}
+[data-theme="light"] .panel,
+[data-theme="light"] .seg-option,
+[data-theme="light"] .explorer-btn,
+[data-theme="light"] .route-preview,
+[data-theme="light"] .route-status {
+  background-image: radial-gradient(240px circle at var(--mx, -300px) var(--my, -300px), rgba(15, 157, 108, .14), transparent 70%);
+}
+
+/* --- 3. Number ticker (health score) -----------------------------------------
+   The value counts up via rAF; keep tabular figures so it doesn't jitter. */
+.ring-value { font-variant-numeric: tabular-nums; }
+
+/* --- 4. Dot-grid background (dot-pattern technique) --------------------------
+   Overrides the ruled-lines body::after layer with a dot grid. Same fixed
+   full-viewport layer, theme-aware density. */
+body::after {
+  background-image: radial-gradient(rgba(178, 197, 190, .22) 1px, transparent 1.3px);
+  background-size: 26px 26px;
+  opacity: .55;
+}
+[data-theme="light"] body::after {
+  background-image: radial-gradient(rgba(28, 62, 50, .24) 1px, transparent 1.3px);
+  opacity: .5;
+}
+
+/* --- Reduced motion: static, fully usable ----------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .analyze-button::after, .install-button::after, .new-analysis::after { display: none; }
+  .panel, .seg-option, .explorer-btn, .route-preview, .route-status { transition: none; }
+}

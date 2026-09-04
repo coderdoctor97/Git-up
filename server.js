@@ -813,7 +813,7 @@ async function analyzeRecovery(body) {
 
 async function analyzeInsight(body) {
   const mode = ['features', 'bugs', 'recommendations', 'custom'].includes(body.mode) ? body.mode : 'recommendations';
-  const question = typeof body.question === 'string' ? body.question.slice(0, 500) : '';
+  const question = typeof body.question === 'string' ? body.question.slice(0, 2000) : '';
   if (!body.repoUrl) throw new Error('A repository URL is required for insights.');
   const { repo, metadata, files } = await getRepoContext(body.repoUrl);
   const effectiveMode = mode === 'custom' ? (body.baseMode && INSIGHT_META[body.baseMode] ? body.baseMode : 'recommendations') : mode;

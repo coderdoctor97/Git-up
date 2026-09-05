@@ -413,9 +413,10 @@ function plainOverviewPanel() {
 // fixed bottom-right container (see oreoHtml + styles.css) so it is available
 // on every view. Answers come from the existing /api/insight endpoint so no
 // new backend is required; messages render as sanitised standard markdown.
-// The mascot is a local project SVG; no remote animation host is required.
+// The mascot is the remote Lottie robot animation, played with the
+// dotLottie player component (see the module script in index.html).
 const OREO_NAME = 'Oreo the cat bot';
-const OREO_MASCOT = '/assets/mascot/oreo-route-bot.svg';
+const OREO_LOTTIE = 'https://assets-v2.lottiefiles.com/a/5c0d4146-9efd-11ee-bf96-5b9fd57436b4/stZ4jBVCdO.lottie';
 const OREO_TIPS = [
   'psst… ask me anything! 🐾',
   'I eat bugs for breakfast! 🐛',
@@ -977,7 +978,7 @@ function oreoHtml() {
       <button class="oreo-ctrl-btn" data-action="oreo-hide" title="Hide Oreo" aria-label="Hide Oreo">hide</button>
     </div>
     <button class="oreo-fab" data-action="oreo-toggle" aria-label="${chat.open ? 'Close' : 'Open'} chat with ${esc(OREO_NAME)} (drag Oreo to move him, double-click to dock back)" title="${esc(OREO_NAME)} — drag me anywhere! 🐾" aria-expanded="${chat.open}">
-      <img class="oreo-mascot" src="${OREO_MASCOT}" alt="" width="72" height="72" decoding="async" aria-hidden="true" />
+      <dotlottie-player class="oreo-mascot" src="${OREO_LOTTIE}" background="transparent" speed="1" loop autoplay aria-hidden="true"></dotlottie-player>
     </button>
   </div>`;
 }

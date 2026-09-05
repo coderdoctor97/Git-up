@@ -1,0 +1,937 @@
+Git-Up — Free AI Provider Integration Implementation Brief
+
+Objective
+
+Enhance Git-Up's existing AI configuration system by adding a zero-API-key free AI provider option while preserving the existing Custom API / OpenAI-compatible provider system exactly as it currently works.
+
+The new feature must feel native to the existing Git-Up UI and must not break, replace, reset, migrate, or otherwise interfere with users who already configured a custom API.
+
+The primary free-provider implementation should use Puter.js.
+
+Puter currently supports browser-side AI through puter.ai.chat() and does not require the Git-Up developer to expose an API key. Users authenticate with Puter and their usage is handled through Puter's user-pays model.
+
+Core Product Principle
+
+Treat AI configuration as two independent modes:
+
+Mode A — Custom API
+
+This is the existing functionality.
+
+Examples:
+
+OpenRouter
+
+OpenAI-compatible endpoints
+
+Ollama/local endpoint
+
+Custom providers
+
+User-entered Base URL
+
+User-entered API key
+
+User-entered model
+
+Do not rewrite this architecture unless absolutely necessary.
+
+Existing stored configuration, request logic, validation, testing, model selection, and persistence must continue working exactly as before.
+
+Mode B — Git-Up Free AI
+
+New provider powered by Puter.js.
+
+Characteristics:
+
+No API key field required.
+
+User can activate it from the existing AI settings interface.
+
+User may need to authenticate with Puter.
+
+Git-Up sends AI requests through Puter's browser SDK.
+
+The user's existing Custom API credentials remain untouched.
+
+Switching back to Custom API immediately restores the previous configuration.
+
+Desired User Experience
+
+The existing AI/API configuration interface should remain recognizable.
+
+Do not create a completely separate settings page.
+
+Instead, add a clearly visible provider-selection layer.
+
+Example:
+
+AI Provider
+
+○ Custom API
+  Use your own OpenAI-compatible API endpoint.
+
+● Git-Up Free
+  No API key required. Connect and start using AI.
+
+When the user selects Custom API:
+
+Base URL
+[ https://......................... ]
+
+API Key
+[ ••••••••••••••••••••••• ]
+
+Model
+[ ......................... ]
+
+[ Test Connection ]
+
+This must remain the same flow users already know.
+
+When the user selects Git-Up Free:
+
+Git-Up Free AI
+
+No API key?
+No problem — Git-Up has a free AI option.
+
+[ Connect Free AI ]
+
+Powered by Puter
+
+After successful authentication:
+
+✓ Free AI connected
+
+AI requests will use your connected Puter account.
+
+[ Test AI ]
+[ Disconnect ]
+
+Add the “Don't Have an API?” Conversion Point
+
+This is important.
+
+Inside the existing Custom API configuration interface, directly underneath the API credential area, add a small helpful call-to-action.
+
+Suggested copy:
+
+Don't have an API?
+
+No problem — Git-Up has a free AI option.
+
+Grab it and test it →
+
+[ Use Git-Up Free AI ]
+
+Alternative compact version:
+
+Don't have your own API?
+No problem. Use Git-Up Free AI instead.
+
+[ Try Free AI ]
+
+The CTA should NOT look like an advertisement.
+
+It should visually belong to the existing settings card.
+
+Recommended behavior:
+
+Clicking it switches the provider selection to Git-Up Free.
+
+Do not delete the existing Custom API values.
+
+Do not overwrite the existing Base URL/API key/model.
+
+Keep those values available if the user switches back.
+
+Topbar Status Integration
+
+Git-Up already has an AI/API status indicator in the top navigation.
+
+Extend that system so the status reflects either provider.
+
+Current conceptual state:
+
+AI API
+● Connected
+
+Add the new state:
+
+AI
+● Free Provider Connected
+
+or preferably:
+
+AI
+● Free AI Connected
+
+When Custom API is active:
+
+AI
+● Custom API Connected
+
+When Git-Up Free / Puter is active:
+
+AI
+● Free AI Connected
+
+When neither provider is usable:
+
+AI
+○ Not Connected
+
+The status should be dynamically derived from the actual active provider state.
+
+Do not hard-code the status.
+
+Recommended Provider State Model
+
+Create a provider abstraction rather than scattering if/else logic throughout the application.
+
+Conceptually:
+
+AIProvider = {
+  CUSTOM_API: "custom",
+  PUTER: "puter"
+}
+
+Persist something similar to:
+
+{
+  activeProvider: "custom"
+}
+
+or:
+
+{
+  activeProvider: "puter"
+}
+
+The exact storage mechanism should match the application's existing persistence architecture.
+
+Preserve Existing Custom API Data
+
+This is one of the most important requirements.
+
+Suppose the user currently has:
+
+Provider: Custom API
+
+Base URL:
+https://openrouter.ai/api/v1
+
+API Key:
+**************
+
+Model:
+some-model
+
+Then they click:
+
+Use Git-Up Free AI
+
+The application must switch active provider to:
+
+puter
+
+but the existing configuration must remain stored.
+
+Later, if the user clicks:
+
+Custom API
+
+the original values must still appear.
+
+Do NOT do this:
+
+localStorage.removeItem("apiKey");
+localStorage.removeItem("baseUrl");
+localStorage.removeItem("model");
+
+when switching providers.
+
+Provider switching should change the active route, not destroy configuration.
+
+Puter.js Integration
+
+Integrate Puter using the official JavaScript SDK.
+
+Puter supports browser usage through:
+
+<script src="https://js.puter.com/v2/"></script>
+
+and AI requests through:
+
+puter.ai.chat(prompt)
+
+It also supports specifying models and other chat options.
+
+If the project is already using a package-based framework, prefer the appropriate package integration rather than adding a second unrelated loading strategy.
+
+Avoid loading Puter repeatedly.
+
+Initialize it once through a dedicated adapter/module.
+
+Example conceptual architecture:
+
+src/
+  ai/
+    ai-provider.js
+    custom-api-provider.js
+    puter-provider.js
+    ai-service.js
+
+If the current project has a different structure, follow its existing architecture instead of forcing this exact folder layout.
+
+Create an AI Provider Adapter
+
+Centralize all AI calls behind one service.
+
+For example:
+
+async function generateAI(request) {
+  const provider = getActiveProvider();
+
+  if (provider === "puter") {
+    return puterProvider.generate(request);
+  }
+
+  if (provider === "custom") {
+    return customApiProvider.generate(request);
+  }
+
+  throw new Error("No AI provider configured");
+}
+
+The rest of Git-Up should call:
+
+generateAI(...)
+
+rather than directly calling:
+
+fetch(...)
+
+or:
+
+puter.ai.chat(...)
+
+throughout the application.
+
+This makes the provider switch transparent to the rest of the product.
+
+Request Compatibility Layer
+
+The existing Custom API implementation may already expect a specific request structure.
+
+Do not force Puter to mimic the HTTP implementation internally.
+
+Instead, normalize the application's logical AI request.
+
+For example:
+
+{
+  messages,
+  systemPrompt,
+  model,
+  temperature,
+  maxTokens
+}
+
+Then:
+
+Custom provider
+
+Translate the normalized request to the existing HTTP API format.
+
+Puter provider
+
+Translate the same logical request into:
+
+puter.ai.chat(messages, options)
+
+or the appropriate supported Puter request structure.
+
+Puter's chat() API supports both a prompt string and message arrays, making it suitable for preserving conversational/system-context behavior where applicable.
+
+Do not change prompt content unless required for compatibility.
+
+Model Strategy
+
+Do not expose the entire Puter model catalog immediately.
+
+For the first implementation, define one sensible default model that is compatible with Git-Up's workload.
+
+Prefer making it configurable internally:
+
+const PUTER_DEFAULT_MODEL = "...";
+
+rather than scattering the model name across the UI.
+
+Puter currently exposes many providers/models and supports model selection through puter.ai.chat() options.
+
+The UI can initially show:
+
+Git-Up Free AI
+Recommended model
+
+rather than forcing users to understand provider/model infrastructure.
+
+Authentication UX
+
+Do not ask the user for a Puter API key.
+
+The intended experience should be:
+
+Git-Up Free AI
+
+No API key required.
+
+[ Connect Free AI ]
+
+Clicking the button should initiate the appropriate Puter authentication/connection flow.
+
+After connection:
+
+✓ Free AI connected
+
+[ Test AI ]
+
+Puter provides browser authentication capabilities alongside its AI SDK.
+
+Do not create a fake “API key generated by Git-Up” field.
+
+Do not store Puter credentials as if they were the user's Custom API key.
+
+Connection Testing
+
+The existing “Test Connection” functionality must remain untouched for Custom API.
+
+Add provider-specific testing.
+
+Custom API
+
+Existing test behavior.
+
+Git-Up Free
+
+Run a tiny inexpensive AI request such as:
+
+Reply with exactly: Git-Up connection successful.
+
+Then show:
+
+✓ Free AI is working
+
+If authentication is missing:
+
+Free AI is not connected.
+
+[ Connect Free AI ]
+
+If the request fails:
+
+Free AI connection failed.
+
+Please reconnect and try again.
+
+Do not expose raw provider errors directly to normal users.
+
+Log useful technical details to the developer console where appropriate.
+
+Topbar State Machine
+
+Create one source of truth for connection status.
+
+Conceptually:
+
+NO_PROVIDER
+CUSTOM_CONNECTED
+CUSTOM_ERROR
+PUTER_CONNECTED
+PUTER_ERROR
+PUTER_AUTH_REQUIRED
+
+The topbar should subscribe to this state rather than independently inspecting localStorage.
+
+Example:
+
+No provider:
+○ AI Not Connected
+
+Custom API:
+● Custom API Connected
+
+Puter:
+● Free AI Connected
+
+Puter requires login:
+○ Free AI — Sign In Required
+
+Provider error:
+⚠ AI Connection Error
+
+Clicking the status indicator should take the user directly to the relevant AI settings section.
+
+UI Copy
+
+Use natural, reassuring copy.
+
+Primary CTA:
+
+Don't have your API?
+No problem — Git-Up has a free AI option.
+
+[ Use Git-Up Free AI ]
+
+Connection card:
+
+Git-Up Free AI
+
+Use AI without configuring your own API key.
+
+Powered by Puter.
+
+[ Connect Free AI ]
+
+Connected state:
+
+✓ Free AI Connected
+
+You're ready to use Git-Up's AI features.
+
+[ Test AI ]
+[ Disconnect ]
+
+Avoid saying:
+
+Unlimited free AI
+
+unless the exact current service terms support that wording.
+
+Prefer:
+
+No API key required
+
+and:
+
+Use Puter-powered AI
+
+Puter's current documentation describes a user-pays model in which the developer does not provide the users' API keys and users authenticate to cover their own AI usage.
+
+Important Security Rule
+
+Never introduce a shared secret API key into the frontend.
+
+Do NOT implement:
+
+const FREE_API_KEY = "xxxxx";
+
+inside public JavaScript.
+
+Do NOT commit a provider secret to:
+
+source code
+
+.env values exposed to the browser
+
+localStorage
+
+public configuration
+
+GitHub Pages assets
+
+The Puter integration should rely on its intended browser SDK/authentication model instead. Puter explicitly documents direct browser-side AI access without requiring the app developer to provide an API key.
+
+Error Handling / Fallback
+
+Do not silently switch providers.
+
+Example:
+
+Custom API fails:
+
+Custom API request failed.
+
+[ Retry ]
+[ Switch to Free AI ]
+
+This is better than silently moving a user from their chosen API to another provider.
+
+Similarly, if Puter fails:
+
+Free AI is temporarily unavailable.
+
+[ Retry ]
+[ Use Custom API ]
+
+Provider changes must always be user-controlled.
+
+Existing Configuration Migration
+
+Before implementing anything, inspect the current application to determine:
+
+where API settings are stored
+
+how active provider is determined
+
+how connection status is calculated
+
+how AI requests are sent
+
+how model selection works
+
+how settings are loaded on startup
+
+which UI component owns the current API modal/panel
+
+whether AI configuration currently exists in localStorage, IndexedDB, URL state, or another system
+
+Do not guess these structures.
+
+Extend them.
+
+If the current configuration is something like:
+
+{
+  baseUrl,
+  apiKey,
+  model
+}
+
+do not destructively change it.
+
+Instead evolve it safely toward something like:
+
+{
+  activeProvider: "custom",
+  custom: {
+    baseUrl,
+    apiKey,
+    model
+  },
+  puter: {
+    connected: false
+  }
+}
+
+Use the actual application's existing schema and migration conventions.
+
+Startup Behavior
+
+When Git-Up loads:
+
+Existing Custom API user
+
+If a valid Custom API configuration already exists:
+
+activeProvider = custom
+
+Preserve current behavior.
+
+User previously chose Puter
+
+Restore:
+
+activeProvider = puter
+
+and determine whether the Puter session is still available.
+
+No provider configured
+
+Default UI should make the free option discoverable.
+
+Do not automatically initiate an authentication popup on page load.
+
+The user should explicitly click:
+
+Connect Free AI
+
+Do Not Break the Current API Modal
+
+The current API configuration UI is already working.
+
+Treat it as a protected component.
+
+Before editing it:
+
+Understand its current DOM/component hierarchy.
+
+Identify existing event handlers.
+
+Identify persistence logic.
+
+Identify validation logic.
+
+Identify connection-test logic.
+
+Identify topbar status logic.
+
+Add the new provider branch with the smallest possible surface-area change.
+
+Avoid rewriting the whole modal just to introduce the new option.
+
+Responsive Design
+
+The new free-provider section must work on:
+
+desktop
+
+tablet
+
+mobile
+
+On desktop:
+
+Provider selector
+        ↓
+Current provider settings
+        ↓
+Don't have your API? → Free AI
+
+On mobile, stack sections vertically.
+
+Do not create horizontal overflow.
+
+Accessibility
+
+All new controls must have:
+
+visible labels
+
+keyboard accessibility
+
+accessible buttons
+
+meaningful status text
+
+focus states
+
+appropriate ARIA attributes where needed
+
+Connection state should not rely solely on color.
+
+For example:
+
+● Free AI Connected
+
+not merely a green dot.
+
+Loading States
+
+When connecting:
+
+Connecting...
+
+When testing:
+
+Testing Free AI...
+
+Disable duplicate submissions while the operation is in progress.
+
+Do not allow multiple simultaneous Puter authentication requests from repeated clicks.
+
+Disconnect Behavior
+
+When the user disconnects Puter:
+
+Disconnect Free AI?
+
+After confirmation:
+
+Puter connection removed.
+
+But do NOT delete:
+
+Custom API configuration
+
+If a Custom API exists, the UI can offer:
+
+Switch to Custom API
+
+Switching Providers
+
+Provider switching should be instant and predictable.
+
+Example:
+
+Current:
+Free AI Connected
+
+User clicks:
+Custom API
+
+Result:
+Custom API configuration appears.
+
+User clicks:
+Free AI
+
+Result:
+Free AI status returns.
+
+There should be no data loss.
+
+Analytics / Telemetry
+
+Do not add invasive tracking merely for this feature.
+
+If the application already has analytics, only add minimal provider-state events if appropriate.
+
+Never log:
+
+API keys
+
+authentication tokens
+
+prompts containing sensitive user content
+
+repository secrets
+
+Testing Checklist
+
+The coding agent must test all of these before considering the feature complete.
+
+Custom API regression
+
+Existing API configuration still loads.
+
+Existing API request still works.
+
+Existing model selection still works.
+
+Existing API test still works.
+
+Existing API key remains unchanged after switching to Puter.
+
+Switching back from Puter restores the old Custom API configuration.
+
+Topbar still says Custom API Connected when appropriate.
+
+Puter flow
+
+Free AI option appears.
+
+CTA appears under Custom API.
+
+Puter SDK loads exactly once.
+
+Connect flow works.
+
+AI request works.
+
+Test request works.
+
+Connected state persists appropriately.
+
+Disconnect works.
+
+Reconnect works.
+
+Topbar shows Free AI Connected.
+
+User can switch between providers.
+
+Failure states
+
+Puter unavailable.
+
+Puter authentication cancelled.
+
+Puter request fails.
+
+Custom API fails.
+
+Network unavailable.
+
+User rapidly clicks Connect.
+
+User rapidly switches providers.
+
+UI
+
+Desktop layout.
+
+Mobile layout.
+
+Keyboard navigation.
+
+Loading states.
+
+Error states.
+
+No duplicate buttons.
+
+No console errors.
+
+Definition of Done
+
+The feature is complete only when:
+
+Existing Custom API functionality works exactly as before.
+
+Git-Up Free AI appears as a second provider.
+
+Users can use Free AI without entering an API key.
+
+The Custom API CTA says, in effect, “Don't have your API? No problem — use Git-Up Free AI.”
+
+The topbar accurately reports the active provider.
+
+Existing Custom API credentials survive provider switching.
+
+Provider-specific connection testing works.
+
+Errors are clear and recoverable.
+
+No shared secret key is exposed.
+
+The code uses a provider abstraction so future providers can be added without rewriting Git-Up's core AI logic.
+
+Future-Proof Architecture
+
+Design this so another provider can later be added easily:
+
+AI Service
+   │
+   ├── Custom API Provider
+   ├── Puter Provider
+   ├── Future Provider
+   └── Future Local Provider
+
+The rest of Git-Up should not care which provider is active.
+
+It should simply request:
+
+generateAI(request)
+
+The provider layer decides how the request is executed.
+
+This will make future integrations much safer and easier.
+
+Final Implementation Instruction to the Coding Agent
+
+Before writing code, inspect the existing AI configuration implementation and identify the smallest safe integration points.
+
+Then implement Puter as an additional provider without rewriting the existing Custom API system.
+
+The priority order is:
+
+1. Preserve existing functionality
+→ 2. Add provider abstraction
+→ 3. Add Puter
+→ 4. Add UI CTA
+→ 5. Add topbar status
+→ 6. Add connection/testing states
+→ 7. Regression-test both providers
+
+Do not remove or rename existing settings keys unless a backward-compatible migration is implemented.
+
+Do not replace the current Custom API implementation with Puter.
+
+Do not hard-code a shared AI API key.
+
+Do not silently switch providers after an error.
+
+The finished experience should feel like Git-Up simply gained a new built-in AI option, not like the existing AI system was replaced.

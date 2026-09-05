@@ -1,0 +1,31 @@
+name: Documentation issue
+description: Report stale commands, unclear setup, broken links, or missing asset attribution
+title: "Docs: "
+labels: [documentation]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Documentation area
+      options:
+        - README quick start or usage
+        - API reference
+        - Configuration or environment variables
+        - Architecture docs
+        - Asset attribution
+        - Contributing or security docs
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or missing?
+      description: Quote the stale command, broken link, or unclear section when possible.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or suggested fix
+      description: Include the command output or link target you checked.

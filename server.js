@@ -1,5 +1,28 @@
 import http from 'node:http';
+import { readFileSync } from 'node:fs';
 import { URL } from 'node:url';
+
+function loadDotEnv(fileUrl = new URL('./.env', import.meta.url)) {
+  let text = '';
+  try {
+    text = readFileSync(fileUrl, 'utf8');
+  } catch (error) {
+    if (error?.code !== 'ENOENT') console.warn(`Could not read .env: ${error.message}`);
+    return;
+  }
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+    if (!match) continue;
+    const [, key, rawValue] = match;
+    if (Object.prototype.hasOwnProperty.call(process.env, key)) continue;
+    const value = rawValue.replace(/^(['"])([\s\S]*)\1$/, '$2');
+    process.env[key] = value;
+  }
+}
+
+loadDotEnv();
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = '0.0.0.0';
@@ -18,7 +41,7 @@ const CONTEXT_TTL_MS = 5 * 60 * 1000;
 const MAX_FILE_BYTES = 110_000;
 const MAX_CONTEXT_CHARS = 36_000;
 const MAX_SCAN_FILES = 24;
-const USER_AGENT = 'Git-Up/1.0 (repository-installation-guide)';
+const USER_AGENT = 'Git-Up/2.0.0 (repository-installation-guide)';
 
 function sendJson(res, status, data) {
   const body = JSON.stringify(data);
@@ -87,16 +110,34 @@ function normaliseRepoUrl(value) {
   return { owner, repo, canonicalUrl: `https://github.com/${owner}/${repo}`, apiPath: `${owner}/${repo}` };
 }
 
+function githubNetworkError(error) {
+  const message = error instanceof Error ? error.message : String(error || '');
+  const cause = error?.cause?.code || error?.cause?.message || '';
+  const detail = [message, cause].filter(Boolean).join(' — ');
+  if (/UNABLE_TO_VERIFY|CERT|SELF_SIGNED|TLS/i.test(detail)) {
+    return new Error('GitHub is reachable, but Node could not verify the TLS certificate. Check the system CA store or proxy settings, then retry.');
+  }
+  if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|fetch failed|network/i.test(detail)) {
+    return new Error(`GitHub API is unreachable${detail ? ` (${detail})` : ''}. Check the network connection or try again later.`);
+  }
+  return error instanceof Error ? error : new Error(detail || 'GitHub API request failed.');
+}
+
 async function github(path, options = {}) {
-  const response = await fetch(`https://api.github.com${path}`, {
-    ...options,
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': USER_AGENT,
-      ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
-      ...(options.headers || {}),
-    },
-  });
+  let response;
+  try {
+    response = await fetch(`https://api.github.com${path}`, {
+      ...options,
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': USER_AGENT,
+        ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
+        ...(options.headers || {}),
+      },
+    });
+  } catch (error) {
+    throw githubNetworkError(error);
+  }
   if (!response.ok) {
     let detail = '';
     try { detail = (await response.json()).message || ''; } catch { /* ignore */ }
@@ -107,12 +148,19 @@ async function github(path, options = {}) {
   return response.json();
 }
 
+function rawGithubUrl(path, ref) {
+  const [owner, repo, ...fileParts] = String(path || '').split('/');
+  if (!owner || !repo || !fileParts.length) return null;
+  const filePath = fileParts.map((part) => encodeURIComponent(part)).join('/');
+  return `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(ref || 'HEAD')}/${filePath}`;
+}
+
 async function rawGithub(path, ref) {
+  const url = rawGithubUrl(path, ref);
+  if (!url) return null;
   let response;
   try {
-    response = await fetch(`https://raw.githubusercontent.com/${path}?ref=${encodeURIComponent(ref)}`, {
-      headers: { 'User-Agent': USER_AGENT },
-    });
+    response = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
   } catch { return null; }
   if (!response.ok) return null;
   const buffer = Buffer.from(await response.arrayBuffer());
@@ -139,7 +187,12 @@ function htmlText(value) {
 }
 
 async function fallbackRepositoryScan(repo, originalError) {
-  const pageResponse = await fetch(repo.canonicalUrl, { headers: { 'User-Agent': USER_AGENT }, redirect: 'follow' });
+  let pageResponse;
+  try {
+    pageResponse = await fetch(repo.canonicalUrl, { headers: { 'User-Agent': USER_AGENT }, redirect: 'follow' });
+  } catch {
+    throw originalError;
+  }
   if (!pageResponse.ok) throw originalError;
   const page = await pageResponse.text();
   const title = page.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || repo.repo;
@@ -1042,7 +1095,7 @@ async function handleApi(req, res, pathname) {
     if (req.method === 'POST' && pathname === '/api/insight') return sendJson(res, 200, { ok: true, insight: await analyzeInsight(body) });
     if (req.method === 'POST' && pathname === '/api/models') return sendJson(res, 200, { ok: true, models: await fetchModels(body) });
     if (req.method === 'POST' && pathname === '/api/recover') return sendJson(res, 200, { ok: true, recovery: await analyzeRecovery(body) });
-    if (req.method === 'GET' && pathname === '/api/health') return sendJson(res, 200, { ok: true, service: 'git-up', version: '2.0', features: FEATURE_FLAGS, githubToken: Boolean(process.env.GITHUB_TOKEN) });
+    if (req.method === 'GET' && pathname === '/api/health') return sendJson(res, 200, { ok: true, service: 'git-up', version: '2.0.0', features: FEATURE_FLAGS, githubToken: Boolean(process.env.GITHUB_TOKEN) });
     return sendJson(res, 404, { ok: false, error: 'Not found.' });
   } catch (error) {
     // The SSE stream owns its socket once headers are sent; writing JSON here

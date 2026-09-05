@@ -3,7 +3,7 @@
 // radial glow via CSS vars), number-ticker (rAF count-up on visibility), and
 // blur-fade scroll reveal (IntersectionObserver + a reveal-done seal so the
 // app's constant re-renders never flicker). No top-level DOM access: safe to
-// import in Node tests. Call all three from bindEvents() after every render,
+// import in Node tests. Call the binders from bindEvents() after every render,
 // since render() replaces innerHTML.
 
 const SPOTLIGHT_SELECTOR = '.panel, .seg-option, .oreo-panel, .oreo-chip, .route-preview, .route-status';
@@ -56,30 +56,6 @@ export function bindTickers(scope) {
 }
 
 const SEAL_AFTER_MS = 4000;
-
-/**
- * Initialise Lenis smooth scroll once. Falls back silently when the CDN
- * script is absent or the user prefers reduced motion.
- */
-export function bindLenis() {
-  if (typeof window === 'undefined') return;
-  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduce) return;
-  if (typeof window.Lenis !== 'function') return;
-  if (window.__lenis) return;
-  const lenis = new window.Lenis({
-    duration: 1.2,
-    easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-    smoothWheel: true,
-  });
-  window.__lenis = lenis;
-  const raf = (time) => {
-    lenis.raf(time);
-    requestAnimationFrame(raf);
-  };
-  requestAnimationFrame(raf);
-}
-
 /**
  * Blur-fade scroll reveal for [data-reveal] and [data-reveal-stagger].
  *

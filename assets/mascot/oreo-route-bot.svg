@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
+  <title id="title">Oreo route bot</title>
+  <desc id="desc">A black-and-white cat robot with a mint route arrow, drawn for Git-Up.</desc>
+  <defs>
+    <linearGradient id="mint" x1="28" y1="72" x2="79" y2="20" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7fe0b2"/>
+      <stop offset="1" stop-color="#35f1c8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#00110b" flood-opacity=".35"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <path d="M25 36c-3-12 1-23 8-26 5 1 10 6 14 12h2c4-6 9-11 14-12 7 3 11 14 8 26 6 7 9 15 9 25 0 18-14 28-32 28S16 79 16 61c0-10 3-18 9-25Z" fill="#0b1114" stroke="#f7fff9" stroke-width="6" stroke-linejoin="round"/>
+    <path d="M32 28c1-5 2-8 5-10 3 2 6 5 8 9M64 28c-1-5-2-8-5-10-3 2-6 5-8 9" fill="none" stroke="#f7fff9" stroke-width="5" stroke-linecap="round"/>
+    <rect x="26" y="34" width="44" height="24" rx="12" fill="#f7fff9"/>
+    <rect x="31" y="39" width="34" height="14" rx="7" fill="#0b1114"/>
+    <rect x="37" y="42" width="5" height="8" rx="2.5" fill="#f7fff9"/>
+    <rect x="54" y="42" width="5" height="8" rx="2.5" fill="#f7fff9"/>
+    <path d="M30 65c7 1 11 5 11 12" fill="none" stroke="#f7fff9" stroke-width="6" stroke-linecap="round"/>
+    <path d="M17 61c-8 2-13 8-13 16 0 8 7 13 17 13h27" fill="none" stroke="#f7fff9" stroke-width="7" stroke-linecap="round"/>
+    <path d="M64 77V51h-8l16-18 16 18h-8v26a8 8 0 0 1-8 8h0a8 8 0 0 1-8-8Z" fill="url(#mint)" stroke="#0b1114" stroke-width="5" stroke-linejoin="round"/>
+    <circle cx="55" cy="66" r="4" fill="#f7fff9"/>
+  </g>
+</svg>

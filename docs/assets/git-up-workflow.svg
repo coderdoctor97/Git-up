@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 640" role="img" aria-labelledby="title desc">
+  <title id="title">Git-Up analysis workflow</title>
+  <desc id="desc">A diagram showing a public GitHub repository flowing into the Git-Up server, optional AI provider, browser session, living install path, recovery loop, and install contract.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1114"/>
+      <stop offset="1" stop-color="#13221e"/>
+    </linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7fe0b2"/>
+      <stop offset="1" stop-color="#35f1c8"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-15%" width="120%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000" flood-opacity=".3"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 10 5 0 10z" fill="#7fe0b2"/>
+    </marker>
+    <style>
+      text { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .title { fill: #f7fff9; font-size: 38px; font-weight: 800; letter-spacing: -.02em; }
+      .sub { fill: #adc2b8; font-size: 18px; }
+      .card { fill: rgba(247,255,249,.07); stroke: rgba(127,224,178,.36); stroke-width: 2; }
+      .card-title { fill: #f7fff9; font-size: 22px; font-weight: 750; }
+      .card-copy { fill: #c8d6d0; font-size: 15px; }
+      .kicker { fill: #7fe0b2; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+      .line { fill: none; stroke: url(#mint); stroke-width: 4; stroke-linecap: round; marker-end: url(#arrow); }
+      .line-muted { fill: none; stroke: rgba(127,224,178,.45); stroke-width: 3; stroke-dasharray: 8 9; stroke-linecap: round; marker-end: url(#arrow); }
+      .chip { fill: rgba(127,224,178,.13); stroke: rgba(127,224,178,.32); }
+      .chip-text { fill: #dffbef; font-size: 13px; font-weight: 700; }
+    </style>
+  </defs>
+
+  <rect width="1120" height="640" rx="38" fill="url(#bg)"/>
+  <circle cx="1040" cy="90" r="180" fill="#7fe0b2" opacity=".08"/>
+  <circle cx="80" cy="560" r="220" fill="#35f1c8" opacity=".06"/>
+
+  <text x="64" y="78" class="title">Git-Up turns a repo URL into a recoverable install route</text>
+  <text x="66" y="112" class="sub">The browser never runs install commands. It plans, checks, records progress, and helps recover from pasted terminal errors.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="64" y="170" width="230" height="128" rx="24" class="card"/>
+    <text x="92" y="212" class="kicker">Input</text>
+    <text x="92" y="246" class="card-title">GitHub repo URL</text>
+    <text x="92" y="274" class="card-copy">Public metadata, tree, README,</text>
+    <text x="92" y="296" class="card-copy">manifests, issues, PRs.</text>
+
+    <rect x="445" y="158" width="240" height="154" rx="26" class="card"/>
+    <text x="474" y="199" class="kicker">Server</text>
+    <text x="474" y="233" class="card-title">Evidence engine</text>
+    <text x="474" y="261" class="card-copy">Normalises URLs, selects setup</text>
+    <text x="474" y="283" class="card-copy">files, ranks install failures,</text>
+    <text x="474" y="305" class="card-copy">computes health and contract.</text>
+
+    <rect x="826" y="170" width="230" height="128" rx="24" class="card"/>
+    <text x="854" y="212" class="kicker">Optional</text>
+    <text x="854" y="246" class="card-title">AI provider</text>
+    <text x="854" y="274" class="card-copy">OpenAI-compatible chat</text>
+    <text x="854" y="296" class="card-copy">adds file-aware prose only.</text>
+
+    <rect x="64" y="404" width="230" height="134" rx="24" class="card"/>
+    <text x="92" y="446" class="kicker">Browser</text>
+    <text x="92" y="480" class="card-title">Install session</text>
+    <text x="92" y="508" class="card-copy">Path choices, checkmarks,</text>
+    <text x="92" y="530" class="card-copy">history, and provider settings</text>
+    <text x="92" y="552" class="card-copy">stay in local/session storage.</text>
+
+    <rect x="445" y="390" width="240" height="162" rx="26" class="card"/>
+    <text x="474" y="432" class="kicker">Output</text>
+    <text x="474" y="466" class="card-title">Living install path</text>
+    <text x="474" y="494" class="card-copy">Multi-path graph, copyable</text>
+    <text x="474" y="516" class="card-copy">commands, failure guards,</text>
+    <text x="474" y="538" class="card-copy">and paste-error recovery.</text>
+
+    <rect x="826" y="404" width="230" height="134" rx="24" class="card"/>
+    <text x="854" y="446" class="kicker">Safety</text>
+    <text x="854" y="480" class="card-title">Install contract</text>
+    <text x="854" y="508" class="card-copy">Expected versions, side effects,</text>
+    <text x="854" y="530" class="card-copy">permissions, verification,</text>
+    <text x="854" y="552" class="card-copy">and unknowns are disclosed.</text>
+  </g>
+
+  <path class="line" d="M294 234 C354 234 381 234 445 234"/>
+  <path class="line-muted" d="M686 234 C746 234 767 234 826 234"/>
+  <path class="line" d="M566 312 C566 348 566 356 566 390"/>
+  <path class="line" d="M294 470 C356 470 382 470 445 470"/>
+  <path class="line" d="M686 470 C746 470 768 470 826 470"/>
+  <path class="line-muted" d="M870 404 C752 350 698 329 643 305"/>
+
+  <g>
+    <rect x="448" y="582" width="103" height="30" rx="15" class="chip"/>
+    <text x="471" y="602" class="chip-text">Node ESM</text>
+    <rect x="566" y="582" width="138" height="30" rx="15" class="chip"/>
+    <text x="591" y="602" class="chip-text">No build step</text>
+    <rect x="719" y="582" width="160" height="30" rx="15" class="chip"/>
+    <text x="744" y="602" class="chip-text">Offline tests</text>
+  </g>
+</svg>

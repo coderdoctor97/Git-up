@@ -1,161 +1,439 @@
+<p align="center">
+  <img src="assets/logo/icon_Dark_mode.png" alt="Git-Up cat robot logo with an upward mint route arrow" width="128" />
+</p>
+
 # Git-Up
 
-Git-Up turns a public GitHub repository URL into a **living install path** — not a README summary, but a session that reacts when something breaks.
+[![CI](https://github.com/coderdoctor97/Git-up/actions/workflows/ci.yml/badge.svg)](https://github.com/coderdoctor97/Git-up/actions/workflows/ci.yml)
 
-## Run locally
+Git-Up turns a public GitHub repository URL into a **living install path**: an evidence-backed checklist that adapts when a setup step fails.
+
+It is for developers, maintainers, reviewers, students, and curious users who need to try an unfamiliar GitHub project without guessing which README command still works.
+
+> **Status:** active early project, app version `2.0.0`. Node.js 20+ is supported by project metadata; CI runs on Node 20 and 22. The root project does **not** currently declare an open-source license, so do not assume redistribution rights until the maintainer adds one.
+
+## Contents
+
+- [Visual proof](#visual-proof)
+- [Why Git-Up](#why-git-up)
+- [Features](#features)
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [Architecture](#architecture)
+- [API reference](#api-reference)
+- [Testing and development](#testing-and-development)
+- [Deployment](#deployment)
+- [Security and privacy](#security-and-privacy)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [Known limitations](#known-limitations)
+- [License and acknowledgements](#license-and-acknowledgements)
+
+## Visual proof
+
+![Diagram of the Git-Up flow from a public GitHub URL through repository evidence, optional AI review, browser session, recovery loop, and install contract](docs/assets/git-up-workflow.svg)
+
+Text-only path: enter a public GitHub URL → Git-Up reads public repository evidence → the server builds a guide, health score, failure scan, path graph, and install contract → the browser renders a checklist → if a command fails, paste the redacted error and Git-Up rebuilds the remaining path.
+
+## Why Git-Up
+
+Most setup instructions are static. Git-Up treats installation as a session:
+
+1. It scans the repository before giving advice.
+2. It shows which failures have been reported or inferred.
+3. It keeps your checked steps and chosen path branch.
+4. It lets you report “this failed” and replaces only the steps that still matter.
+5. It discloses what it could and could not determine before you run commands.
+
+Git-Up **does not** run install commands for you, deploy repositories, manage secrets, or guarantee that a third-party project is safe. It produces a reviewable path for your own terminal.
+
+## Features
+
+### Install planning
+
+- **Living install path:** checkbox progress persists in browser storage, and recovery revisions keep completed steps intact.
+- **Zero-context clone modes:** choose novice, standard, or expert depth without re-scanning the repository.
+- **Copyable command script:** export the current path branch as a shell script ending with the install-contract verification command.
+
+### Repository evidence
+
+- **GitHub URL normalization:** accepts HTTPS, SSH, and Git-style GitHub repository URLs.
+- **Setup-file scan:** reads public README, package manifests, lockfiles, Docker/compose files, env templates, and other setup-related files when available.
+- **Failure-first analysis:** samples GitHub issues, pull requests, and token-enabled discussions; reported failures stay labelled separately from file-based inference.
+- **Repository health score:** computes a 0-100 install-health score from documentation, reproducibility aids, freshness, failure pressure, and default-branch CI signals.
+
+### Path safety
+
+- **Multi-path install graph:** derives choices such as operating system, Docker/native path, minimal/full workspace, and development/production target from repository evidence.
+- **Install contract:** records expected versions, install side effects, required permissions, verification command, guarantees, and unknowns under a content-derived ID.
+- **Deterministic recovery fallback:** works without an AI key by matching pasted terminal output against local recovery rules.
+
+### Optional AI assistance
+
+- Supports OpenAI-compatible chat APIs for deeper guide/recovery prose and model discovery through `/api/models`.
+- AI is optional; local scan and recovery paths are designed to keep working when no provider is configured or the provider fails.
+
+## Requirements
+
+| Requirement | Version / notes | Verified in this audit |
+| --- | --- | --- |
+| Node.js | `>=20` (`.nvmrc` recommends Node 22) | Ran on Node `v22.22.3`; CI is configured for Node 20 and 22. |
+| npm | npm with lockfile v3 support | Ran with npm `10.9.8`. |
+| Browser | Modern browser with JavaScript enabled | UI is a vanilla ES-module app served by `server.js`. |
+| Network | Required for analyzing GitHub repositories and optional AI calls | Local tests and smoke checks do not require external network. |
+| GitHub token | Optional `GITHUB_TOKEN` server env var | Raises REST rate limits and enables Discussions scanning. Use least privilege. |
+| AI provider | Optional OpenAI-compatible endpoint and API key | Configured in the UI; not needed for the default local path. |
+
+There are no npm runtime dependencies and no build step.
+
+## Quick start
+
+From a clean checkout:
 
 ```bash
+git clone https://github.com/coderdoctor97/Git-up.git
+cd Git-up
+node -e "const major=Number(process.versions.node.split('.')[0]); if (major < 20) { console.error('Node.js 20+ required'); process.exit(1); } console.log(process.version)"
+npm ci
 npm start
 ```
 
-Then open `http://localhost:3000`.
+Expected server output:
 
-## Technology stack
+```text
+Git-Up listening on http://localhost:3000
+Bound to 0.0.0.0:3000 for local and preview traffic.
+```
 
-- **Vanilla HTML / CSS / JavaScript (ES modules)** — no framework, no build step, no dependencies.
-- **Node.js (built-in `http` module)** for the server; nothing to install beyond Node 18+.
-- The UI is a single-page client (`public/app.js`) that renders from string templates and re-binds events after each render. `public/path-engine.js` is shared by browser and server on purpose, so a rendered checklist can never disagree with the generated script.
+Open <http://localhost:3000>, paste a public GitHub repository URL, choose your experience level, and select **Analyze repository**.
 
-## Scripts
-
-| Script | What it does |
-| --- | --- |
-| `npm start` | Start the server on `PORT` (default 3000). |
-| `npm test` | Run the offline `node --test` suite (path engine, features, render, UI system). |
-
-## Environment variables
-
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `PORT` | no | Server port. Defaults to `3000`. |
-| `GITHUB_TOKEN` | no | Raises GitHub API rate limits and enables Discussions scanning for the failure-first analysis. No scopes needed for public repos. |
-| `E2B_SANDBOX_ID` | no | Only used to print the correct preview URL when running inside an E2B sandbox. |
-
-See `.env.example`. Never commit real tokens.
-
-## What is included
-
-### The six v2 capabilities
-
-- **Living install path.** The checklist is a session, not a one-shot list. Ticks persist across reloads, and “This failed” on any step sends the pasted terminal output plus your remaining steps to a recovery pass that rebuilds the path from the fault forward — completed steps are never rewritten, reused step ids keep their checkmarks, and every correction is recorded in a revision trail you can roll back.
-- **Failure-first analysis.** Before the steps, Git-Up reads the repository’s own Issues, PRs (and Discussions when a token allows), keeps only the threads that describe setup trouble, clusters them by failure signature, and ranks by frequency. Each ranked signature is then written back into the step it would break, so the happy path arrives pre-patched.
-- **Multi-path install graph.** Docker or native, macOS/Linux/Windows, minimal or full workspace, development or production — derived from what the tree actually contains and drawn as a clickable SVG graph. Choosing a branch re-composes the visible steps instantly with no re-scan.
-- **Install contract.** A short, content-hashed statement of the exact versions expected, what gets installed and where, which permissions are needed, and what “working” looks like — with a verification command and a tick-list to confirm after the fact. Anything the scan could not read is listed under “what this contract could not determine” rather than quietly omitted.
-- **Zero-context clone mode.** “I know nothing”, “used similar tools”, or “expert, fast path” — reshapes explanation depth, warning volume, and whether the whole path collapses into one copy-paste block. Switching levels is instant and lossless both directions.
-- **Repo health score.** 0-100 from documentation quality, reproducibility aids, instruction freshness, reported install failures, and the default branch’s CI state. Computed from evidence, never from the model, with each weight disclosed and hard caps for archived repos, missing docs, or a red main branch.
-
-### Carried over
-
-- HTTPS, SSH, and Git-style GitHub URL normalisation
-- Public repository metadata and setup-file scanning through the GitHub API, with a raw-file fallback when the API is rate limited
-- Heuristic guide generation when no AI provider is configured — every panel above works without a key
-- OpenAI-compatible AI endpoint support with server-side proxying, and model discovery through `GET /models`
-- Persistent local history, copyable per-step commands, and a generated install script that follows your chosen path and ends on the contract check
-
-## AI configuration
-
-Open **AI provider** from the top-right settings button. Enter:
-
-- Base URL, for example `https://api.openai.com/v1`
-- Chat endpoint, usually `/chat/completions`
-- API key
-- A model returned by **Fetch models**
-
-The key is kept in `sessionStorage` and is only sent to the Git-Up backend for the current request. The server does not persist it. The model request expects an OpenAI-compatible response with `data: [{ id }]`; the chat request expects `choices[0].message.content` containing the JSON guide schema.
-
-For a private GitHub repository or higher GitHub API limits, start the server with a token:
+To verify the server without opening a browser:
 
 ```bash
-GITHUB_TOKEN=ghp_your_token npm start
+npm run smoke
 ```
 
-## Layout
+Expected success signal:
 
-```
-server.js                  http server, GitHub access, guide assembly
-server/failures.js         Feature 2 — thread scan, signatures, ranking
-server/health.js           Feature 6 — evidence-based health score
-server/pathgraph.js        Feature 3 — decision graph; patching steps from failures
-server/contract.js         Feature 4 — install contract
-server/recovery.js         Feature 1 — error matching and corrected paths
-public/path-engine.js      shared composition + tuning engine (browser and server import it)
-public/app.js              the whole client UI
-public/styles.css          the design system (tokens, layout, every component, light theme)
-public/magic.css           the Magic layer (tokens, reveal, card glow, marquee, palette)
-public/magic.js            spotlight, tickers, scroll reveal (no top-level DOM access)
-tests/features.test.mjs    offline regression tests for all of the above
-tests/render.test.mjs      whole-view render tests against a DOM stub
-tests/session.test.mjs     install-session persistence tests
-tests/ui-system.test.mjs   smoke tests for the Magic-layer components
+```text
+Smoke check passed on http://127.0.0.1:<port>
 ```
 
-`public/path-engine.js` is imported by both sides on purpose: the browser and the server compose a path with the same function, so a rendered checklist can never disagree with the generated script.
+## Usage
 
-## Design system
+### 1. Analyze a repository
 
-The visual identity is a **surveyor's route ledger**: dark paper (`--bg #0b1114`), a mint route accent (`--route #7fe0b2`), mono metadata, a ruled route spine with mileage dots, and stamped trust artifacts. A full daylight theme is provided via `[data-theme="light"]` variable overrides.
+Use a public GitHub URL, for example:
 
-`styles.css` owns every colour, surface, and component token. `magic.css` is strictly additive: it layers animation and interaction on top without modifying base rules, so the ledger identity stays intact.
+```text
+https://github.com/owner/repo
+```
 
-Tokens live in two additive `:root` blocks:
+Git-Up reads public metadata and setup files, then returns a guide. If no AI provider is configured, the guide is built by local heuristics.
 
-- Colour/surface (styles.css): `--bg`, `--panel`, `--route`, `--muted`, `--line`, `--radius-*`, `--dur-*`, `--ease`.
-- Rhythm (magic.css): `--space-1…8`, `--type-*`, `--shadow-sm/md`, `--dur-reveal`, `--stagger-step`, `--ease-out`.
+### 2. Choose the route that matches your machine
 
-Avoid one-off colours and spacing values in new code — use the tokens.
+When Git-Up finds meaningful variants, it renders a path graph. Typical choices include:
 
-## Animation system (Magic-UI-inspired, dependency-free)
+- macOS, Linux, or Windows syntax;
+- native install versus Docker when container files exist;
+- minimal run path versus full contributor workspace;
+- development versus production target when scripts support both.
 
-All patterns are hand-built with CSS animations, CSS custom properties, `IntersectionObserver`, and `requestAnimationFrame` — no animation libraries.
+Changing a graph option recomposes the visible checklist in the browser. It does not re-scan the repository.
 
-| Pattern | Where | How it works |
+### 3. Review the install contract
+
+Before running commands, read the install contract. It states:
+
+- expected runtime and package-manager versions when declared;
+- what packages/images/files will be created and where;
+- permissions and network access Git-Up expects;
+- the final verification command;
+- what the scan could not determine.
+
+### 4. Run commands yourself
+
+Copy one command at a time, or use **Copy whole path** in expert mode. Git-Up never executes commands from analyzed repositories.
+
+### 5. Recover from a failed step
+
+If a step fails:
+
+1. Select **This failed** on that step.
+2. Paste the smallest useful terminal output after redacting secrets.
+3. Git-Up matches known failures locally and, if configured, asks the AI provider for a repository-aware recovery.
+4. Completed steps stay untouched; only the failed step and following steps are revised.
+
+## Configuration
+
+`server.js` loads `.env` automatically and does not override variables already exported in your shell. Start from the safe template:
+
+```bash
+cp .env.example .env
+```
+
+| Variable / setting | Required | Where set | Safe example | Purpose and secret handling |
+| --- | --- | --- | --- | --- |
+| `PORT` | No | Environment or `.env` | `3000` | HTTP port. Defaults to `3000`. |
+| `GITHUB_TOKEN` | No | Environment or `.env` | empty | Raises GitHub rate limits and enables Discussions scanning. Treat as a secret; do not commit it. Public-repo metadata needs no scopes, but use the least-privileged token available. |
+| `E2B_SANDBOX_ID` | No | Environment or `.env` | empty | Only changes the preview URL printed when running inside an E2B/Arena sandbox. |
+| AI base URL | No | Browser settings | `https://api.openai.com/v1` | Stored in `sessionStorage`; sent to the local server only for the current provider request. |
+| AI chat endpoint | No | Browser settings | `/chat/completions` | OpenAI-compatible chat endpoint. |
+| AI models endpoint | No | Browser settings | `/models` | Used by **Fetch models**. |
+| AI API key | No | Browser settings | do not paste into docs | Stored in `sessionStorage`; proxied to the configured provider by the local server; not persisted by `server.js`. |
+| AI model | No | Browser settings | provider-specific | Must be a model returned by the provider or accepted by its chat endpoint. |
+
+## Architecture
+
+Git-Up is a dependency-light Node server plus a vanilla browser app:
+
+```text
+server.js
+  ├─ GitHub metadata/tree/raw-file/thread reads
+  ├─ local guide, failure, health, graph, contract, and recovery engines
+  ├─ optional AI provider proxying
+  └─ static file serving for public/ and root assets/
+
+public/app.js
+  ├─ single-page UI rendered from templates
+  ├─ localStorage install history and progress
+  ├─ sessionStorage AI provider settings
+  └─ shared path composition from public/path-engine.js
+```
+
+Important modules:
+
+| File | Role |
+| --- | --- |
+| `server/failures.js` | Failure signatures, GitHub thread scoring, and file-based inference. |
+| `server/health.js` | Evidence-only install-health score. |
+| `server/pathgraph.js` | Repository-derived route options and failure guard insertion. |
+| `server/contract.js` | Install contract and deterministic contract ID. |
+| `server/recovery.js` | Local and optional AI recovery from pasted terminal output. |
+| `public/path-engine.js` | Shared ordering, stable step keys, progress, path composition, and revision helpers. |
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full data-flow and maintainer checklist.
+
+## API reference
+
+All endpoints are served by `server.js`. POST bodies and responses are JSON unless noted.
+
+### `GET /api/health`
+
+Returns service health and feature flags.
+
+```json
+{
+  "ok": true,
+  "service": "git-up",
+  "version": "2.0.0",
+  "features": ["living-install-path"],
+  "githubToken": false
+}
+```
+
+### `POST /api/analyze`
+
+Builds a complete guide in one JSON response.
+
+Request:
+
+```json
+{
+  "repoUrl": "https://github.com/owner/repo",
+  "expertise": "some",
+  "config": {
+    "baseUrl": "https://api.example.test/v1",
+    "endpoint": "/chat/completions",
+    "apiKey": "redacted",
+    "model": "example-model"
+  }
+}
+```
+
+`config` is optional. `expertise` may be `novice`, `some`, or `expert`.
+
+Response shape:
+
+```json
+{
+  "ok": true,
+  "guide": {
+    "repository": {},
+    "defaultPath": [],
+    "health": {},
+    "failureScan": {},
+    "pathGraph": {},
+    "contract": {},
+    "session": {}
+  }
+}
+```
+
+### `POST /api/analyze-stream`
+
+Same analysis as `/api/analyze`, streamed as Server-Sent Events. Progress events look like:
+
+```text
+data: {"phase":"files","label":"Scanning setup files…","percent":25}
+```
+
+The final event has `phase: "result"` and includes `guide`.
+
+### `POST /api/recover`
+
+Rebuilds the failed step and remaining path from pasted terminal output.
+
+Request fields:
+
+| Field | Required | Notes |
 | --- | --- | --- |
-| **Magic Card** | every `.panel` | Cursor-tracked radial spotlight (`--mx`/`--my` via `pointermove`) plus a masked 1px border glow that brightens near the cursor. No layout shift. |
-| **Blur Fade / scroll reveal** | panels + lists via `data-reveal` / `data-reveal-stagger` | `bindReveals()` arms the page (`reveal-armed`), reveals on intersection with batch stagger, then seals the view (`reveal-done`) so re-renders never flicker. A 4s failsafe and no-JS default keep content visible. |
-| **Animated list** | install steps, failure rows | Staggered entrance through `data-reveal-stagger`; existing hover/active states. |
-| **Marquee** | failure-signature strip | Pure CSS infinite loop (two identical groups, `translateX(-50%)`), pauses on hover/focus, edge fade masks, static wrap under reduced motion. Only shown with ≥3 signatures; hidden from assistive tech (the ranked list below is the source of truth). |
-| **Number ticker** | health score ring | `requestAnimationFrame` count-up on visibility. |
-| **Shimmer button** | `Analyze`, `New analysis` | Periodic sheen sweep, 6.5s idle cadence; reserved for the two true entry points. |
-| **Bento grid** | analysis overview strip | CSS Grid `grid-template-areas`: summary anchors two rows; branch/language/files are compact ledger stamps. Stacks cleanly at 800px and 600px. |
-| **Command palette** | Ctrl/Cmd+K, topbar search, mobile "Menu" | Keyboard-first navigation and actions with type-to-filter, arrow/Enter selection, `listbox`/`option` semantics, and the shared modal focus trap. Deliberately chosen over a decorative dock. |
+| `repoUrl` | Yes | Public GitHub repository URL. |
+| `failedStepId` | Yes | Step ID/key from the current guide. |
+| `errorText` | Yes | Redacted terminal output, capped server-side. |
+| `completedSteps` | No | Completed steps are preserved and not rewritten. |
+| `remainingSteps` | No | The failed step and steps after it. |
+| `expertise` | No | `novice`, `some`, or `expert`. |
+| `guide` | No | Current guide context. |
+| `config` | No | Optional AI provider config. |
 
-Accessibility rules that hold across all of it:
+Response includes `recovery.correctedSteps`, `diagnosis`, `checks`, `matched`, and `revision`.
 
-- `prefers-reduced-motion: reduce` disables every animation (reveal, marquee, sheen, spotlight transitions) without hiding content.
-- Reveal effects are opt-in per element (`data-reveal`) and never run without JavaScript.
-- The marquee is `aria-hidden` with an `sr-only` text alternative; the accessible ranked list stays beneath it.
-- The palette is a real dialog (`role="dialog"`, `aria-modal`, `aria-activedescendant`) sharing the existing focus trap.
+### `POST /api/models`
 
-## API
+Fetches model names from an OpenAI-compatible provider.
 
-- `GET /api/health` → `{ ok, service, version, features[], githubToken }`
-- `POST /api/models` with `{ baseUrl, apiKey, modelsEndpoint? }`
-- `POST /api/analyze` with `{ repoUrl, expertise?: 'novice'|'some'|'expert', config? }` → `{ guide }` including `health`, `failureScan`, `pathGraph`, `defaultPath`, `contract`, `verdict`, `expertise`, `session`, plus the earlier `plainOverview`, `fileTree[]`, and `followUps[]`
-- `POST /api/recover` with `{ repoUrl, failedStepId, errorText, completedSteps[], remainingSteps[], expertise?, revision?, guide?, config? }` → `{ recovery }` with `{ source, confidence, diagnosis, matched[], correctedSteps[], checks[], followUps[], revision }`. Falls back to the local rule engine whenever no AI is configured or the provider errors, so the button never dead-ends.
-- `POST /api/insight` with `{ repoUrl, mode: 'features' | 'bugs' | 'recommendations' | 'custom', question?, baseMode?, config? }` → `{ insight }`
+```json
+{
+  "baseUrl": "https://api.example.test/v1",
+  "apiKey": "redacted",
+  "modelsEndpoint": "/models"
+}
+```
 
-## Notes and limits
+### `POST /api/insight`
 
-- The browser never executes install commands. **Install** produces a reviewable script for your own terminal.
-- GitHub Discussions need a server `GITHUB_TOKEN`: they are GraphQL-only, so without a token the failure scan relies on Issues and PRs and says so in the panel.
-- Without a token, unauthenticated GitHub rate limits (60 requests/hour) can shorten the failure scan; it degrades to file-derived inference and labels those items `inferred from files` rather than reporting them as user complaints.
-- Scanned file bodies are capped per file, and step `id`s are drawn from a fixed vocabulary (`clone`, `toolchain`, `dependencies`, `env`, `build`, `dev`, `run`, `verify`, …) so recovery passes and graph branches can reference steps reliably.
+Asks for repo-specific insight using local heuristics or the optional AI provider.
 
-## Tests
+`mode` may be `features`, `bugs`, `recommendations`, or `custom`.
+
+## Testing and development
+
+Install exactly from the lockfile:
+
+```bash
+npm ci
+```
+
+Run the offline regression suite:
 
 ```bash
 npm test
 ```
 
-Runs the full offline `node --test` suite: path composition, lineage keys, revision splicing, contract determinism, failure clustering, recovery matching, reader-mode idempotency, whole-view rendering, session persistence, and the Magic-layer UI components (reveal attributes, bento strip, marquee duplication, palette). No network, no API key.
+Current coverage includes path composition, stable step keys, revision splicing, install-contract determinism, failure clustering, recovery matching, reader-mode shaping, full-view render checks, persisted sessions, and Oreo UI markup.
+
+Run the local smoke check:
+
+```bash
+npm run smoke
+```
+
+Run all configured checks:
+
+```bash
+npm run check
+```
+
+Start the app for manual testing:
+
+```bash
+PORT=3000 npm start
+```
+
+There is currently no `lint`, `typecheck`, or `build` script. The app runs directly as ESM JavaScript.
 
 ## Deployment
 
-The server is a single ESM Node process with no build step:
+The supported deployment shape is a long-running Node.js process:
 
 ```bash
 npm ci
-GITHUB_TOKEN=... PORT=3000 node server.js
+PORT=3000 GITHUB_TOKEN= npm start
 ```
 
-Any Node host works (a VM, Fly.io, Railway, Docker). There is no dynamic OG route — the app is served as-is with static Open Graph / Twitter meta tags in `public/index.html`.
+Operational notes:
+
+- Bind host is fixed to `0.0.0.0` in `server.js` for local and preview traffic.
+- Set `PORT` to the value assigned by your host.
+- Provide `GITHUB_TOKEN` through the host's secret manager only if you need higher rate limits or Discussions scanning.
+- The app is **not** static-only; `/api/*` routes require `server.js`.
+- The repository does not currently ship a Dockerfile, process manager config, or deployment-specific config.
+
+## Security and privacy
+
+- Git-Up never runs commands from analyzed repositories.
+- Git-Up is intended for public GitHub repositories. Private repository scanning is not a documented/supported path.
+- Server-side GitHub reads include public metadata, setup file contents, issues, pull requests, and optional token-enabled discussions.
+- If an AI provider is configured, scanned public file excerpts and the user's recovery/error text may be sent to that provider. Do not paste secrets into recovery text.
+- AI API keys are stored in browser `sessionStorage` and sent to the local server only for the current request. The server does not persist them.
+- Analysis history, path selections, checkmarks, and revision history are stored in browser `localStorage`.
+- `GITHUB_TOKEN` belongs only in server environment variables or `.env`, never in the browser or committed files.
+
+See [SECURITY.md](SECURITY.md) for the reporting policy and maintainer checklist.
+
+## Troubleshooting
+
+| Symptom | Verified or likely fix |
+| --- | --- |
+| `npm ci` refuses to run because Node is too old | Use Node 20 or newer: `nvm install 22 && nvm use 22`. |
+| `npm start` reports `EADDRINUSE` | Another process is using port 3000. Try `PORT=3001 npm start`. |
+| Browser opens but analysis fails with a GitHub rate-limit message | Start the server with a least-privileged `GITHUB_TOKEN`. |
+| Analysis fails with a TLS/certificate message | Node could not verify the GitHub certificate, often because of a proxy or missing CA bundle. Fix the system CA/proxy settings, then restart `npm start`. |
+| AI model fetch returns 401/404 | Check the base URL, model endpoint, API key, and whether the provider uses OpenAI-compatible response shapes. |
+| `.env` changes do not appear | Restart the server. Exported shell variables override `.env` values. |
+| Generated commands use `cp` or POSIX shell syntax on Windows | Choose the Windows branch in the path graph when available, or run commands in Git Bash/WSL. |
+| `npm run build` or `npm run lint` is missing | That is expected for this repo today; use `npm test`, `npm run smoke`, and `npm start`. |
+
+## Contributing
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md). In short:
+
+```bash
+npm ci
+npm test
+npm run smoke
+```
+
+For pull requests, include the commands you ran, screenshots or notes for UI changes, and any new environment variables, permissions, network calls, or assets.
+
+Issue forms are available for bugs and documentation problems. Redact tokens, private hostnames, and personal data before posting logs.
+
+## Known limitations
+
+- Only `github.com` repository URLs are accepted.
+- The strongest path comes from public repository evidence; private repos, generated setup files, and undocumented manual services may be missed.
+- GitHub Discussions scanning requires `GITHUB_TOKEN` because Discussions use GitHub GraphQL.
+- The health score is a heuristic score from observable evidence, not a guarantee that installation is safe or fast.
+- No root open-source license is declared yet.
+- No browser automation test is configured; current UI tests render templates against a minimal DOM stub.
+
+Recommended next steps:
+
+1. Choose and add a root `LICENSE` if the maintainer wants open-source redistribution.
+2. Add browser automation for one happy-path analysis and one recovery flow.
+3. Decide whether the large `skills/` reference directories should remain in this repository or move to separate documented sources.
+4. Add release tags/notes once the project has a stable distribution cadence.
+
+## License and acknowledgements
+
+The root repository currently has no `LICENSE` file and `package.json` is marked `UNLICENSED`. That means use, redistribution, and contribution terms are not yet defined. Maintainers should choose a license before inviting broad external reuse.
+
+Third-party and local asset details are recorded in [docs/ASSETS.md](docs/ASSETS.md). Key acknowledgements:
+
+- Excalifont by Excalidraw, licensed under OFL-1.1, is used only in Oreo messenger text.
+- particles.js by Vincent Garreau, licensed under MIT, is vendored locally for the background particle field.
+- The Oreo mascot SVG and workflow diagram added in this pass are original local project assets.

@@ -34,6 +34,7 @@ import { computeHealth, fetchCiSignal, healthVerdict } from './server/health.js'
 import { buildPathGraph, patchStepsForFailures } from './server/pathgraph.js';
 import { buildContract } from './server/contract.js';
 import { recoverPath } from './server/recovery.js';
+import { buildOreoMessages } from './server/oreo-system.js';
 import { decorateSteps, composeSteps, EXPERTISE_LEVELS, expertiseFor, tuneGuide } from './public/path-engine.js';
 
 const FEATURE_FLAGS = ['living-install-path', 'failure-first-analysis', 'multi-path-graph', 'install-contract', 'zero-context-clone', 'repo-health-score'];
@@ -580,7 +581,7 @@ function heuristicInsight(repo, metadata, files, mode) {
   };
 }
 
-async function callAiInsight(config, repo, metadata, files, mode, question) {
+async function callAiInsight(config, repo, metadata, files, mode, question, session) {
   if (!config || !config.baseUrl || !config.apiKey || !config.model) return null;
   const meta = INSIGHT_META[mode] || INSIGHT_META.recommendations;
   const endpointUrl = buildProviderUrl(config.baseUrl, config.endpoint || '/chat/completions');
@@ -590,12 +591,16 @@ async function callAiInsight(config, repo, metadata, files, mode, question) {
       ? 'Audit logic and architecture for edge cases, vulnerabilities, and breakage-prone areas. Each bullet names the weak spot, how it shows up in plain words, and the fix-first hint. Concrete, file-aware, no fear-mongering.'
       : 'Recommend UX improvements, missing documentation, and untapped potential. Prioritise small, high-leverage wins a non-expert can understand. No jargon.';
   const prompt = `You are Git-Up, a kind senior product engineer. Analyse this public GitHub repository and return ONLY valid JSON.\n\nJSON schema:\n{"title":"string","intro":"2-sentence plain-language intro","bullets":["4-6 specific bullets, each 1-3 sentences"],"outro":"one-sentence suggested first step","followUps":["follow-up question 1","follow-up question 2","follow-up question 3"]}\n\nRules:\n- Reference actual files/steps from the context (e.g. package.json scripts, missing tests, env handling).\n- Task (${mode}): ${question || meta.question}\n- ${modeBrief}\n- followUps must be 2–3 short, clickable, contextual questions that continue THIS topic, not generic filler.\n- Plain, warm tone. Avoid heavy jargon where possible.\n\nRepository: ${repo.canonicalUrl}\nMetadata: ${JSON.stringify({ name: metadata.name, description: metadata.description, language: metadata.language, default_branch: metadata.default_branch, topics: metadata.topics })}\n\nFiles:\n${files.map((f) => `--- ${f.path}\n${compactText(f.content, 4000)}`).join('\n')}`;
+  // Bot-only: Oreo's strict system instruction rides along as the system
+  // message on this chat path alone. Guide generation (callAi) and recovery
+  // never see it.
+  const messages = buildOreoMessages(prompt, session);
   let response;
   try {
     response = await fetchWithTimeout(endpointUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-      body: JSON.stringify({ model: config.model, temperature: 0.35, messages: [{ role: 'user', content: prompt }] }),
+      body: JSON.stringify({ model: config.model, temperature: 0.35, messages }),
     }, AI_CHAT_TIMEOUT_MS);
   } catch (error) {
     throw toProviderError(error);
@@ -937,7 +942,7 @@ async function analyzeInsight(body) {
   const effectiveMode = mode === 'custom' ? (body.baseMode && INSIGHT_META[body.baseMode] ? body.baseMode : 'recommendations') : mode;
   if (body.config?.apiKey && body.config?.model) {
     try {
-      const ai = await callAiInsight(body.config, repo, metadata, files, effectiveMode, question || undefined);
+      const ai = await callAiInsight(body.config, repo, metadata, files, effectiveMode, question || undefined, body.session);
       if (ai) {
         if (mode === 'custom' && question) ai.title = `Answer: ${question.slice(0, 80)}`;
         ai.mode = mode;

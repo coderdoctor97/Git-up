@@ -894,6 +894,39 @@ function pushOreo(role, text) {
   if (state.chat.messages.length > 100) state.chat.messages = state.chat.messages.slice(-100);
 }
 
+/**
+ * Compact live-session snapshot for Oreo's system instruction context.
+ * Bounded and title-only (no file bodies, no secrets) — the server re-caps
+ * everything again, so this is belt and braces for a small request body.
+ */
+function oreoSessionSnapshot() {
+  const snap = { expertise: state.expertise || 'some' };
+  const guide = state.guide;
+  if (!guide) return snap;
+  try {
+    const steps = activePath().map((entry, index) => ({
+      title: String(entry.title || '').slice(0, 160),
+      command: String(entry.command || '').slice(0, 600),
+      done: Boolean(state.checked[keyOf(entry, index)]),
+    }));
+    const completed = steps.filter((s) => s.done).slice(-12);
+    const remaining = steps.filter((s) => !s.done).slice(0, 12);
+    snap.repoUrl = state.repoUrl;
+    snap.repoName = shortName(guide);
+    snap.summary = String(guide.summary || '').slice(0, 600);
+    snap.activeStep = remaining[0] || null;
+    snap.completedSteps = completed;
+    snap.remainingSteps = remaining.slice(1);
+    snap.provider = hasAiConfig() ? `AI review via configured provider (model ${state.settings.model || 'unknown'})` : 'heuristic fallback (no AI configured)';
+    if (guide.contract?.contractId) snap.contractId = guide.contract.contractId;
+    if (guide.contract?.verification) snap.verification = guide.contract.verification;
+    const lastFailure = state.failures[state.failures.length - 1];
+    if (lastFailure) snap.failure = `step ${lastFailure.stepId}: ${String(lastFailure.diagnosis || '').slice(0, 300)}`;
+    if (state.recovery?.diagnosis) snap.recovery = String(state.recovery.diagnosis).slice(0, 300);
+  } catch { /* minimal snapshot on any surprise */ }
+  return snap;
+}
+
 async function sendOreoMessage(raw) {
   const text = String(raw ?? '').trim().slice(0, 2000);
   if (!text || state.chat.typing) return;
@@ -914,7 +947,7 @@ async function sendOreoMessage(raw) {
       const response = await fetch('/api/insight', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: state.repoUrl, mode: 'custom', question: text, baseMode: 'recommendations', config }),
+        body: JSON.stringify({ repoUrl: state.repoUrl, mode: 'custom', question: text, baseMode: 'recommendations', config, session: oreoSessionSnapshot() }),
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || 'The chat could not answer right now.');

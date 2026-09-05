@@ -33,7 +33,7 @@ It is for developers, maintainers, reviewers, students, and curious users who ne
 
 ## Visual proof
 
-![Diagram of the Git-Up flow from a public GitHub URL through repository evidence, optional AI review, browser session, recovery loop, and install contract](docs/assets/git-up-workflow.svg)
+<video src="assets/video_demo/git-up-demo.mp4" controls width="100%"></video>
 
 Text-only path: enter a public GitHub URL → Git-Up reads public repository evidence → the server builds a guide, health score, failure scan, path graph, and install contract → the browser renders a checklist → if a command fails, paste the redacted error and Git-Up rebuilds the remaining path.
 

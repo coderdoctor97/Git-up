@@ -875,7 +875,7 @@ textarea.text-field { height: auto; }
 [data-theme="light"] .seg-label em { color: #52655e; }
 
 /* ===========================================================================
-   Oreo the cat bot — floating Lottie button + messenger panel.
+   Oreo the cat bot — floating local-SVG button + messenger panel.
    Fixed 20px/20px bottom-right, z-index above every app layer.
    =========================================================================== */
 /* Excalidraw-style handwriting, messenger ONLY. Served locally from
@@ -926,7 +926,7 @@ textarea.text-field { height: auto; }
 .oreo-fab:hover { transform: translateY(-2px) scale(1.03); }
 .oreo-fab:active { transform: scale(.96); cursor: grabbing; }
 .oreo-fab:focus-visible { outline: 2px solid var(--route); outline-offset: 4px; }
-.oreo-fab dotlottie-player { width: 72px; height: 72px; display: block; pointer-events: none; }
+.oreo-mascot { width: 72px; height: 72px; display: block; pointer-events: none; }
 .oreo-controls {
   display: flex;
   gap: 6px;
@@ -1165,7 +1165,7 @@ textarea.text-field { height: auto; }
 @media (max-width: 600px) {
   .oreo-float { right: 12px; bottom: 64px; }
   .oreo-fab { width: 64px; height: 64px; }
-  .oreo-fab dotlottie-player { width: 60px; height: 60px; }
+  .oreo-mascot { width: 60px; height: 60px; }
   /* No sidebar on mobile: bottom sheet above the mobile nav. */
   .oreo-panel { left: 12px; right: 12px; bottom: 76px; width: auto; height: min(400px, calc(100vh - 190px)); }
   .oreo-tip { max-width: 190px; font-size: 11px; }

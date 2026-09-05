@@ -4,8 +4,21 @@
   "private": true,
   "description": "A living install-path planner for GitHub repositories: failure-first analysis, multi-path install graph, install contract, and a repo health score.",
   "type": "module",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/coderdoctor97/Git-up.git"
+  },
+  "bugs": {
+    "url": "https://github.com/coderdoctor97/Git-up/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node server.js",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "check": "npm test && npm run smoke"
   }
 }

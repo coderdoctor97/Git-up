@@ -1,5 +1,5 @@
 import { composeSteps, keyOf, progressOf, applyRevision, revisionEntry, selectionsLabel, EXPERTISE_LEVELS, tuneGuide } from './path-engine.js';
-import { bindSpotlight, bindTickers, bindLenis, bindReveals } from './magic.js';
+import { bindSpotlight, bindTickers, bindReveals } from './magic.js';
 import { initParticles } from './particles-workspace.js';
 import { initTopbarContributions } from './topbar-contributions.js';
 
@@ -413,8 +413,9 @@ function plainOverviewPanel() {
 // fixed bottom-right container (see oreoHtml + styles.css) so it is available
 // on every view. Answers come from the existing /api/insight endpoint so no
 // new backend is required; messages render as sanitised standard markdown.
+// The mascot is a local project SVG; no remote animation host is required.
 const OREO_NAME = 'Oreo the cat bot';
-const OREO_LOTTIE = 'https://assets-v2.lottiefiles.com/a/5c0d4146-9efd-11ee-bf96-5b9fd57436b4/stZ4jBVCdO.lottie';
+const OREO_MASCOT = '/assets/mascot/oreo-route-bot.svg';
 const OREO_TIPS = [
   'psst… ask me anything! 🐾',
   'I eat bugs for breakfast! 🐛',
@@ -976,7 +977,7 @@ function oreoHtml() {
       <button class="oreo-ctrl-btn" data-action="oreo-hide" title="Hide Oreo" aria-label="Hide Oreo">hide</button>
     </div>
     <button class="oreo-fab" data-action="oreo-toggle" aria-label="${chat.open ? 'Close' : 'Open'} chat with ${esc(OREO_NAME)} (drag Oreo to move him, double-click to dock back)" title="${esc(OREO_NAME)} — drag me anywhere! 🐾" aria-expanded="${chat.open}">
-      <dotlottie-player src="${OREO_LOTTIE}" autoplay loop style="width:72px;height:72px" aria-hidden="true"></dotlottie-player>
+      <img class="oreo-mascot" src="${OREO_MASCOT}" alt="" width="72" height="72" decoding="async" aria-hidden="true" />
     </button>
   </div>`;
 }
@@ -2108,7 +2109,6 @@ function bindEvents() {
   bindSpotlight(document);
   bindTickers(document);
   bindReveals(document);
-  bindLenis();
   // Workspace particle field (particles.js engine): initializes exactly once
   // into <main>'s host div, behind .main-inner. No-op on repeat renders.
   initParticles();

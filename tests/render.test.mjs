@@ -71,8 +71,8 @@ test('a full guide renders every v2 panel', async () => {
   assert.doesNotMatch(html, /Curious Explorer/, 'the old inline explorer is removed');
   assert.match(html, /oreo-float/, 'the floating Oreo chatbot replaces it');
   assert.match(html, /Oreo the cat bot/, 'the tooltip names Oreo');
-  assert.match(html, /dotlottie-player/, 'the robot uses the dotLottie player');
-  assert.match(html, /stZ4jBVCdO\.lottie/, 'the requested robot animation is used');
+  assert.match(html, /class="oreo-mascot"/, 'the robot uses the local SVG mascot');
+  assert.match(html, /oreo-route-bot\.svg/, 'the mascot asset is served locally');
   assert.match(html, /data-action="oreo-toggle"/, 'the robot is wrapped in a button');
   assert.doesNotMatch(html, />undefined|\[object Object\]/);
 });

@@ -1,0 +1,81 @@
+name: Bug report
+description: Report a reproducible Git-Up problem
+title: "Bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please redact tokens, passwords, private hostnames, and customer data before sharing logs.
+  - type: input
+    id: analyzed-repo
+    attributes:
+      label: Repository URL analyzed
+      description: Public GitHub URL that triggered the issue, if applicable.
+      placeholder: https://github.com/owner/repo
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Analyze flow
+        - Failure recovery
+        - Install contract or health score
+        - Path graph or generated script
+        - Browser UI or accessibility
+        - Server startup or deployment
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the smallest set of actions that reproduces the problem.
+      placeholder: |
+        1. Run `npm start`
+        2. Open http://localhost:3000
+        3. Analyze ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include redacted terminal/browser output when useful.
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      placeholder: v22.22.3
+  - type: dropdown
+    id: github-token
+    attributes:
+      label: Was GITHUB_TOKEN configured?
+      options:
+        - "No"
+        - "Yes"
+        - "Unsure"
+  - type: dropdown
+    id: ai-provider
+    attributes:
+      label: Was an AI provider configured?
+      options:
+        - "No"
+        - "Yes"
+        - "Unsure"
+  - type: textarea
+    id: checks
+    attributes:
+      label: Checks already run
+      placeholder: |
+        npm test → pass/fail
+        npm run smoke → pass/fail

@@ -287,7 +287,7 @@ async function scanDiscussions(repo, token) {
   try {
     const response = await fetch('https://api.github.com/graphql', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'Git-Up/1.0', 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'Git-Up/2.0.0', 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, variables: { owner: repo.owner, name: repo.repo } }),
     });
     if (!response.ok) return null;

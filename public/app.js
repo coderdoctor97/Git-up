@@ -97,13 +97,8 @@ const state = {
   modelOptions: Array.isArray(savedSettings.modelOptions) ? savedSettings.modelOptions : [],
   history: savedHistory,
   secretVisible: false,
-  // Feature 3 + 4: Curious Explorer + follow-ups
-  insight: null,
-  insightLoading: null,
-  insightError: '',
-  insightCache: {},
-  insightQuestion: '',
-  insightBase: 'recommendations',
+  // Oreo the cat bot — floating messenger chatbot (replaces the old inline explorer)
+  chat: { open: false, messages: [], typing: false, tipIndex: 0, input: '', hidden: false, muted: false, pos: null, panelPos: null },
   // v2 features: living path, graph, contract, reader mode
   expertise: 'some',
   pathSelections: {},
@@ -129,7 +124,6 @@ const state = {
 
 function hasAiConfig() { return Boolean(state.settings.baseUrl && state.settings.apiKey && state.settings.model); }
 function sourceLabel() { return state.guide?.source === 'ai' ? 'AI reviewed' : 'Local scan'; }
-function insightSourceLabel(source) { return source === 'ai' ? 'AI answer' : 'Smart summary'; }
 function showToast(message, type = 'success') {
   state.toast = { message, type };
   render();
@@ -414,47 +408,577 @@ function plainOverviewPanel() {
   </section>`;
 }
 
-// --- Features 3 + 4: Curious Explorer + follow-ups ---------------------------
-const EXPLORER_MODES = [
-  { id: 'features', label: 'Suggest Feature Extensions', hint: '3–5 ideas for your own copy', icon: 'bulb' },
-  { id: 'bugs', label: 'Audit for Potential Bugs', hint: 'Weak spots, plainly explained', icon: 'shield' },
-  { id: 'recommendations', label: 'Proactive Recommendations', hint: 'Small wins, big welcome', icon: 'compass' },
+// --- Oreo the cat bot: floating messenger chatbot ----------------------------
+// Replaces the old inline "Curious Explorer" section. The chat lives in a
+// fixed bottom-right container (see oreoHtml + styles.css) so it is available
+// on every view. Answers come from the existing /api/insight endpoint so no
+// new backend is required; messages render as sanitised standard markdown.
+const OREO_NAME = 'Oreo the cat bot';
+const OREO_LOTTIE = 'https://assets-v2.lottiefiles.com/a/5c0d4146-9efd-11ee-bf96-5b9fd57436b4/stZ4jBVCdO.lottie';
+const OREO_TIPS = [
+  'psst… ask me anything! 🐾',
+  'I eat bugs for breakfast! 🐛',
+  'you got this, superstar! ⭐',
+  'stuck? I got paws to help! 🐱',
+  'boop! need a hint? 💡',
+  'lets fix it together! 🚀',
 ];
-function followUpChips(questions, baseMode) {
-  if (!questions?.length) return '';
-  return `<div class="followups"><div class="followups-label">${icon('chat', 12)}<span>Keep exploring</span></div><div class="followup-chips">${questions.map((q) => `<button class="followup-chip" data-action="followup" data-question="${esc(q)}" data-basemode="${esc(baseMode || 'recommendations')}">${esc(q)}<span class="chip-arrow">${icon('arrow', 12)}</span></button>`).join('')}</div></div>`;
+const OREO_QUICK = [
+  'What does this repo do?',
+  'How do I install it?',
+  'What usually breaks?',
+  'Suggest one improvement',
+];
+
+function oreoInline(text) {
+  let out = String(text ?? '');
+  out = out.replace(/`([^`\n]+?)`/g, '<code class="oreo-code">$1</code>');
+  out = out.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/__([^_]+?)__/g, '<strong>$1</strong>');
+  out = out.replace(/(^|[^*\w])\*([^*\n]+?)\*(?![*])/g, '$1<em>$2</em>');
+  out = out.replace(/~~([^~]+?)~~/g, '<del>$1</del>');
+  out = out.replace(/\[([^\]]+?)\]\((https?:[^)\s]+?)\)/g, (m, t, u) => {
+    const url = String(u).replace(/"/g, '%22');
+    return `<a href="${url}" target="_blank" rel="noreferrer noopener">${t}</a>`;
+  });
+  out = out.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noreferrer noopener">$2</a>');
+  return out;
 }
-function explorerSection() {
-  const loading = state.insightLoading;
-  const buttons = EXPLORER_MODES.map((mode) => {
-    const isActive = state.insight?.mode === mode.id || loading === mode.id;
-    return `<button class="explorer-btn ${isActive ? 'active' : ''}" data-action="explorer" data-mode="${mode.id}" ${loading ? 'disabled' : ''}>
-      <span class="explorer-ic">${icon(mode.icon, 16)}</span>
-      <span class="explorer-text"><strong>${loading === mode.id ? 'Thinking…' : mode.label}</strong><small>${esc(mode.hint)}</small></span>
-    </button>`;
-  }).join('');
-  let result = '';
-  if (loading) {
-    result = `<div class="insight-panel loading" aria-live="polite"><div class="insight-loading">${icon('refresh', 16, 'spinner')}<div><strong>Reading the project closely…</strong><p>Checking files, steps, and notes for a grounded answer.</p></div></div></div>`;
-  } else if (state.insightError && !state.insight) {
-    result = `<div class="insight-panel error" role="alert">${icon('warning', 16)}<div><strong>Could not load that idea.</strong><p>${safe(state.insightError)}</p></div></div>`;
-  } else if (state.insight) {
-    const insight = state.insight;
-    result = `<article class="insight-panel" aria-live="polite">
-      <div class="insight-head"><div class="insight-title-wrap"><span class="insight-ic">${icon(insight.mode === 'features' ? 'bulb' : insight.mode === 'bugs' ? 'shield' : 'compass', 15)}</span><div><h4>${esc(insight.title || 'Explorer result')}</h4><span class="tag ${insight.source === 'ai' ? 'ai' : 'scan'}"><i class="tag-dot"></i>${insightSourceLabel(insight.source)}</span></div></div><button class="icon-button" data-action="insight-close" aria-label="Close explorer result">${icon('close', 15)}</button></div>
-      ${insight.intro ? `<p class="insight-intro">${safe(insight.intro)}</p>` : ''}
-      ${(insight.bullets || []).length ? `<ul class="insight-list">${insight.bullets.map((b) => `<li>${safe(b)}</li>`).join('')}</ul>` : ''}
-      ${insight.outro ? `<div class="insight-outro">${icon('check', 13)}<span>${safe(insight.outro)}</span></div>` : ''}
-      ${followUpChips(insight.followUps, insight.mode === 'custom' ? 'recommendations' : insight.mode)}
-    </article>`;
+
+/** Minimal standard-markdown renderer: headings, lists, code, quotes, tables, links. Input is escaped first, so output is XSS-safe. */
+function oreoMarkdown(src) {
+  let text = String(src ?? '').replace(/\r\n/g, '\n');
+  if (!text.trim()) return '';
+  const fences = [];
+  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (m, lang, code) => {
+    const idx = fences.length;
+    fences.push(`<pre class="oreo-pre"><code>${esc(String(code).replace(/^\n+|\n+$/g, ''))}</code></pre>`);
+    return `\u0000FENCE${idx}\u0000`;
+  });
+  text = esc(text);
+  const lines = text.split('\n');
+  let html = '';
+  let inUl = false;
+  let inOl = false;
+  let para = [];
+  const flushPara = () => {
+    if (!para.length) return;
+    html += `<p>${para.map(oreoInline).join('<br />')}</p>`;
+    para = [];
+  };
+  const closeLists = () => {
+    if (inUl) { html += '</ul>'; inUl = false; }
+    if (inOl) { html += '</ol>'; inOl = false; }
+  };
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const fenceMatch = line.match(/^\u0000FENCE(\d+)\u0000$/);
+    if (fenceMatch) {
+      flushPara(); closeLists();
+      html += fences[Number(fenceMatch[1])] || '';
+      continue;
+    }
+    // GFM table: header row + separator row
+    if (line.includes('|') && lines[i + 1] && /^\s*\|?[\s:|-]+\|?[\s:|-]*$/.test(lines[i + 1]) && lines[i + 1].includes('-')) {
+      flushPara(); closeLists();
+      const cells = (row) => row.trim().replace(/^\||\|$/g, '').split('|').map((c) => `<th>${oreoInline(c.trim())}</th>`.replace('<th>', '<td>').replace('</th>', '</td>'));
+      // header uses th
+      const headCells = line.trim().replace(/^\||\|$/g, '').split('|').map((c) => `<th>${oreoInline(c.trim())}</th>`).join('');
+      html += `<div class="oreo-table-wrap"><table><thead><tr>${headCells}</tr></thead><tbody>`;
+      i += 1; // skip separator
+      while (i + 1 < lines.length && lines[i + 1].includes('|') && lines[i + 1].trim()) {
+        i += 1;
+        const bodyCells = lines[i].trim().replace(/^\||\|$/g, '').split('|').map((c) => `<td>${oreoInline(c.trim())}</td>`).join('');
+        html += `<tr>${bodyCells}</tr>`;
+      }
+      html += '</tbody></table></div>';
+      continue;
+    }
+    if (!line.trim()) { flushPara(); closeLists(); continue; }
+    const heading = line.match(/^(#{1,4})\s+(.*)$/);
+    if (heading) {
+      flushPara(); closeLists();
+      const level = heading[1].length;
+      html += `<h${level + 2} class="oreo-h">${oreoInline(heading[2].trim())}</h${level + 2}>`;
+      continue;
+    }
+    if (/^\s*---+\s*$/.test(line) || /^\s*\*\*\*+\s*$/.test(line)) { flushPara(); closeLists(); html += '<hr />'; continue; }
+    const quote = line.match(/^&gt;\s?(.*)$/);
+    if (quote) { flushPara(); closeLists(); html += `<blockquote>${oreoInline(quote[1])}</blockquote>`; continue; }
+    const ul = line.match(/^\s*[-*•]\s+(.*)$/);
+    if (ul) {
+      flushPara();
+      if (inOl) { html += '</ol>'; inOl = false; }
+      if (!inUl) { html += '<ul>'; inUl = true; }
+      html += `<li>${oreoInline(ul[1])}</li>`;
+      continue;
+    }
+    const ol = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    if (ol) {
+      flushPara();
+      if (inUl) { html += '</ul>'; inUl = false; }
+      if (!inOl) { html += '<ol>'; inOl = true; }
+      html += `<li>${oreoInline(ol[1])}</li>`;
+      continue;
+    }
+    para.push(line.trim());
   }
-  const guideFollowUps = state.guide?.followUps || [];
-  return `<section class="panel explorer-panel" aria-labelledby="explorer-title" data-reveal>
-    <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('spark', 15)}</div><div><h3 id="explorer-title">Curious Explorer</h3><p class="panel-subtitle">One click, three specialist lenses — works instantly, deeper with AI connected. Never part of the install path.</p></div></div></div>
-    <div class="explorer-body"><div class="explorer-grid">${buttons}</div>
-    <form class="insight-custom" id="insight-custom"><label for="insight-question">Ask your own question about this repository</label><div class="insight-custom-row"><input class="text-field" id="insight-question" value="${esc(state.insightQuestion)}" placeholder="For example: does this need a database?" maxlength="2000" autocomplete="off" /><select class="select-field" id="insight-base" aria-label="Answer lens"><option value="recommendations" ${state.insightBase === 'recommendations' ? 'selected' : ''}>Recommendations lens</option><option value="features" ${state.insightBase === 'features' ? 'selected' : ''}>Features lens</option><option value="bugs" ${state.insightBase === 'bugs' ? 'selected' : ''}>Bugs lens</option></select><button class="secondary-button" type="submit" ${loading ? 'disabled' : ''}>Ask</button></div></form>
-    ${result}${!state.insight && !loading ? followUpChips(guideFollowUps, 'recommendations') : ''}</div>
-  </section>`;
+  flushPara(); closeLists();
+  // restore any inline fence placeholder that sat inside a paragraph (rare)
+  html = html.replace(/\u0000FENCE(\d+)\u0000/g, (m, n) => fences[Number(n)] || '');
+  return html;
+}
+
+function insightToMarkdown(insight) {
+  const parts = [];
+  if (insight?.title) parts.push(`## ${String(insight.title).slice(0, 140)}`);
+  if (insight?.intro) parts.push(String(insight.intro));
+  for (const b of (insight?.bullets || []).slice(0, 7)) parts.push(`- ${String(b)}`);
+  if (insight?.outro) parts.push(`> ${String(insight.outro)}`);
+  const md = parts.join('\n\n').slice(0, 6000);
+  const followUps = Array.isArray(insight?.followUps) ? insight.followUps.map(String).filter(Boolean).slice(0, 3) : [];
+  return { md: md || 'Oops, my whiskers missed that one! 🙈 Try asking about setup, errors, or what to build next — I promise I am all ears! 🐱', followUps };
+}
+
+function loadOreoPrefs() {
+  try {
+    const raw = localStorage.getItem('git-up-oreo-prefs');
+    if (!raw) return;
+    const prefs = JSON.parse(raw);
+    if (!state.chat) state.chat = { open: false, messages: [], typing: false, tipIndex: 0, input: '', hidden: false, muted: false, pos: null, panelPos: null };
+    if (typeof prefs.muted === 'boolean') state.chat.muted = prefs.muted;
+    if (typeof prefs.hidden === 'boolean') state.chat.hidden = prefs.hidden;
+    if (prefs.pos && Number.isFinite(prefs.pos.x) && Number.isFinite(prefs.pos.y)) {
+      state.chat.pos = { x: Math.max(0, Math.min(window.innerWidth - 90, prefs.pos.x)), y: Math.max(0, Math.min(window.innerHeight - 90, prefs.pos.y)) };
+    }
+    if (prefs.panelPos && Number.isFinite(prefs.panelPos.x) && Number.isFinite(prefs.panelPos.y)) {
+      state.chat.panelPos = {
+        x: Math.max(0, Math.min(window.innerWidth - 100, prefs.panelPos.x)),
+        y: Math.max(0, Math.min(window.innerHeight - 80, prefs.panelPos.y)),
+      };
+    }
+  } catch { /* ignore corrupt prefs */ }
+}
+
+function saveOreoPrefs() {
+  try {
+    localStorage.setItem('git-up-oreo-prefs', JSON.stringify({ muted: Boolean(state.chat?.muted), hidden: Boolean(state.chat?.hidden), pos: state.chat?.pos || null, panelPos: state.chat?.panelPos || null }));
+  } catch { /* private mode etc */ }
+}
+
+function ensureOreoWelcome() {
+  if (!state.chat) state.chat = { open: false, messages: [], typing: false, tipIndex: 0, input: '', hidden: false, muted: false, pos: null, panelPos: null };
+  if (typeof state.chat.hidden !== 'boolean') state.chat.hidden = false;
+  if (typeof state.chat.muted !== 'boolean') state.chat.muted = false;
+  if (!('pos' in state.chat)) state.chat.pos = null;
+  if (!('panelPos' in state.chat)) state.chat.panelPos = null;
+  if (state.chat.messages.length) return;
+  const repo = shortName(state.guide);
+  const hasRepo = Boolean(state.guide);
+  state.chat.messages.push({
+    id: uid(),
+    role: 'bot',
+    text: hasRepo
+      ? `Hiii! I\'m **Oreo**! 🐱✨ I sniffed through **${repo}** just for you!\n\nYou\'re doing amazing, by the way! 💪 Ask me stuff like:\n- How do I install this? 🚀\n- What usually goes boom? 💥\n- What cool thing should I build next? 🎨`
+      : `Hiii! I\'m **Oreo**! 🐱✨ Your cheery repo buddy!\n\nDrop a repo link above and I\'ll sniff it out in seconds! 🕵️ Until then, ask me anything about getting started — no silly questions here, only silly cats! 😹`,
+  });
+  state.chat.suggestions = [...OREO_QUICK];
+}
+
+/** True while a synthetic click right after a real drag must be swallowed. Self-expiring so it can never get stuck. */
+function oreoShouldSuppressClick(now = Date.now()) {
+  return typeof window !== 'undefined' && Number(window.__oreoSuppressClickUntil || 0) > now;
+}
+
+/** Pure helper: clamp a floating position inside the viewport. Unit-tested. */
+function oreoClampPos(x, y, vw, vh, margin = 4, sizeX = 84, sizeY = null) {
+  const w = Number.isFinite(vw) && vw > 0 ? vw : 1024;
+  const h = Number.isFinite(vh) && vh > 0 ? vh : 768;
+  const sx = Number.isFinite(sizeX) && sizeX > 0 ? sizeX : 84;
+  const sy = Number.isFinite(sizeY) && sizeY > 0 ? sizeY : sx;
+  return {
+    x: Math.max(margin, Math.min(w - sx, Math.round(x))),
+    y: Math.max(margin, Math.min(h - sy, Math.round(y))),
+  };
+}
+
+/** Pure helper: one critically-damped-ish follow step toward a target. Never overshoots. Unit-tested. */
+function oreoSpringStep(cur, target, k = 0.2) {
+  const c = Number(cur);
+  const t = Number(target);
+  if (!Number.isFinite(c) || !Number.isFinite(t)) return Number.isFinite(t) ? t : 0;
+  const stiffness = Math.max(0.01, Math.min(1, Number(k) || 0.2));
+  const next = c + (t - c) * stiffness;
+  return Math.abs(next - t) < 0.6 ? t : next;
+}
+
+function toggleOreo(force) {
+  if (oreoShouldSuppressClick()) return;
+  console.log('Open Chat');
+  ensureOreoWelcome();
+  if (state.chat.hidden && (force === undefined || force === true)) { state.chat.hidden = false; saveOreoPrefs(); }
+  const next = typeof force === 'boolean' ? force : !state.chat.open;
+  state.chat.open = next;
+  render();
+  if (next) setTimeout(() => document.querySelector('#oreo-input')?.focus(), 60);
+}
+
+function setOreoMuted(muted) {
+  ensureOreoWelcome();
+  state.chat.muted = Boolean(muted);
+  saveOreoPrefs();
+  render();
+}
+
+function setOreoHidden(hidden) {
+  ensureOreoWelcome();
+  state.chat.hidden = Boolean(hidden);
+  if (state.chat.hidden) state.chat.open = false;
+  saveOreoPrefs();
+  render();
+}
+
+function oreoPositionStyle() {
+  const pos = state.chat?.pos;
+  if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+    return ` style="left:${Math.round(pos.x)}px;top:${Math.round(pos.y)}px;right:auto;bottom:auto;"`;
+  }
+  return '';
+}
+
+function oreoPanelPositionStyle() {
+  const pos = state.chat?.panelPos;
+  if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+    return ` style="left:${Math.round(pos.x)}px;top:${Math.round(pos.y)}px;right:auto;bottom:auto;"`;
+  }
+  return '';
+}
+
+/**
+ * Drag the floating bot by grabbing Oreo himself. Tap still toggles the chat.
+ *
+ * The old bug was never "drag itself" — it was a shared boolean flag plus
+ * button-level move/up listeners plus re-renders mid-gesture, so a drag could
+ * randomly pop the chat open. All three are fixed while keeping whole-bot
+ * dragging: tracking lives on `window` (fast flicks and outside releases
+ * can't orphan the gesture), the grab offset is anchored (no jump), nothing
+ * re-renders mid-gesture (single commit on release), and the post-drag
+ * synthetic click is swallowed by a capture-phase guard with a self-expiring
+ * timestamp that can never get stuck.
+ */
+function initOreoDrag() {
+  try {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    if (typeof window.addEventListener !== 'function') return;
+    // One capture-phase guard for the whole page: swallows only clicks inside
+    // #oreo-float while the suppression window is active.
+    if (!window.__oreoClickGuardBound) {
+      window.__oreoClickGuardBound = true;
+      window.addEventListener('click', (e) => {
+        if (oreoShouldSuppressClick() && e.target?.closest?.('#oreo-float')) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+      }, true);
+    }
+    const fab = document.querySelector('#oreo-float .oreo-fab');
+    const float = document.querySelector('#oreo-float');
+    if (!fab || !float || fab.__oreoDragBound) return;
+    fab.__oreoDragBound = true;
+    fab.addEventListener('pointerdown', (e) => {
+      if (e.button !== undefined && e.button !== 0) return;
+      e.preventDefault();
+      const r = float.getBoundingClientRect();
+      // Anchor: keep the exact grab offset so the bot follows the cursor
+      // without jumping — then trails behind it like a curious pet.
+      const grabDX = e.clientX - r.left;
+      const grabDY = e.clientY - r.top;
+      const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+      const canSpring = !reduceMotion && typeof requestAnimationFrame === 'function';
+      window.__oreoDragging = true;
+      float.classList?.add('oreo-dragging');
+      let moved = false;
+      let tx = r.left;
+      let ty = r.top;
+      let cx = r.left;
+      let cy = r.top;
+      let raf = 0;
+      const stopSpring = () => {
+        if (raf) {
+          if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(raf);
+          raf = 0;
+        }
+      };
+      const tick = () => {
+        raf = 0;
+        cx = oreoSpringStep(cx, tx);
+        cy = oreoSpringStep(cy, ty);
+        float.style.left = `${Math.round(cx)}px`;
+        float.style.top = `${Math.round(cy)}px`;
+        float.style.right = 'auto';
+        float.style.bottom = 'auto';
+        if (cx === tx && cy === ty) return; // caught up: rest
+        raf = requestAnimationFrame(tick);
+      };
+      const move = (ev) => {
+        moved = true;
+        const p = oreoClampPos(ev.clientX - grabDX, ev.clientY - grabDY, window.innerWidth, window.innerHeight);
+        if (!canSpring) {
+          cx = tx = p.x;
+          cy = ty = p.y;
+          float.style.left = `${p.x}px`;
+          float.style.top = `${p.y}px`;
+          float.style.right = 'auto';
+          float.style.bottom = 'auto';
+          return;
+        }
+        tx = p.x;
+        ty = p.y;
+        if (!raf) {
+          const now = float.getBoundingClientRect();
+          cx = now.left;
+          cy = now.top;
+          raf = requestAnimationFrame(tick);
+        }
+      };
+      const end = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', end);
+        window.removeEventListener('pointercancel', end);
+        window.__oreoDragging = false;
+        float.classList?.remove('oreo-dragging');
+        stopSpring();
+        if (!moved) return; // plain tap: move nothing, let the click toggle the chat
+        window.__oreoSuppressClickUntil = Date.now() + 350;
+        const r2 = float.getBoundingClientRect();
+        ensureOreoWelcome();
+        state.chat.pos = { x: Math.round(r2.left), y: Math.round(r2.top) };
+        saveOreoPrefs();
+        render();
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', end);
+      window.addEventListener('pointercancel', end);
+      try { fab.setPointerCapture?.(e.pointerId); } catch { /* ignore */ }
+    });
+    // Double-click Oreo to dock him back to the default bottom-right corner.
+    fab.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      ensureOreoWelcome();
+      state.chat.pos = null;
+      saveOreoPrefs();
+      render();
+    });
+  } catch { /* ignore */ }
+}
+
+/**
+ * Drag the chat box itself by its header. Unlike the robot (which trails the
+ * cursor like a pet), a window wants precision, so this is an exact anchored
+ * follow. Position persists separately from the robot in `panelPos`.
+ * Header buttons/inputs are excluded so the close button keeps working, and
+ * the same self-expiring click guard covers the trailing synthetic click.
+ * Double-click an empty header spot to snap the box back to its dock.
+ */
+function initOreoPanelDrag() {
+  try {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    if (typeof window.addEventListener !== 'function') return;
+    const head = document.querySelector('#oreo-float .oreo-panel .oreo-head');
+    const panel = document.querySelector('#oreo-float .oreo-panel');
+    if (!head || !panel || head.__oreoPanelDragBound) return;
+    head.__oreoPanelDragBound = true;
+    head.addEventListener('pointerdown', (e) => {
+      if (e.button !== undefined && e.button !== 0) return;
+      if (e.target?.closest?.('button, input, select, textarea, a')) return;
+      e.preventDefault();
+      const r = panel.getBoundingClientRect();
+      const grabDX = e.clientX - r.left;
+      const grabDY = e.clientY - r.top;
+      window.__oreoDragging = true;
+      panel.classList?.add('oreo-panel-dragging');
+      let moved = false;
+      const move = (ev) => {
+        moved = true;
+        const p = oreoClampPos(
+          ev.clientX - grabDX, ev.clientY - grabDY,
+          window.innerWidth, window.innerHeight, 4,
+          Math.max(200, Math.min(r.width, window.innerWidth - 24)),
+          Math.max(160, Math.min(r.height, window.innerHeight - 24)),
+        );
+        panel.style.left = `${p.x}px`;
+        panel.style.top = `${p.y}px`;
+        panel.style.right = 'auto';
+        panel.style.bottom = 'auto';
+      };
+      const end = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', end);
+        window.removeEventListener('pointercancel', end);
+        window.__oreoDragging = false;
+        panel.classList?.remove('oreo-panel-dragging');
+        if (!moved) return;
+        window.__oreoSuppressClickUntil = Date.now() + 350;
+        const r2 = panel.getBoundingClientRect();
+        ensureOreoWelcome();
+        state.chat.panelPos = { x: Math.round(r2.left), y: Math.round(r2.top) };
+        saveOreoPrefs();
+        render();
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', end);
+      window.addEventListener('pointercancel', end);
+      try { head.setPointerCapture?.(e.pointerId); } catch { /* ignore */ }
+    });
+    head.addEventListener('dblclick', (e) => {
+      if (e.target?.closest?.('button, input, select, textarea, a')) return;
+      e.preventDefault();
+      ensureOreoWelcome();
+      state.chat.panelPos = null;
+      saveOreoPrefs();
+      render();
+    });
+  } catch { /* ignore */ }
+}
+
+/**
+ * Oreo moves by himself while the page scrolls: a small velocity-driven
+ * hop-and-tilt on the robot that eases back to rest. Purely cosmetic —
+ * DOM transform only, never touches state, never re-renders, never opens
+ * the chat. Skipped during drags, when hidden, and for reduced motion.
+ */
+function initOreoScrollWiggle() {
+  try {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    if (typeof window.addEventListener !== 'function') return;
+    if (window.__oreoWiggleBound) return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
+    if (typeof requestAnimationFrame !== 'function') return;
+    window.__oreoWiggleBound = true;
+    let lastY = window.scrollY || 0;
+    let tilt = 0;
+    let lift = 0;
+    let raf = 0;
+    const settle = () => {
+      raf = 0;
+      tilt *= 0.88;
+      lift *= 0.88;
+      const fab = document.querySelector?.('#oreo-float .oreo-fab');
+      if (!fab) return;
+      if (Math.abs(tilt) < 0.4 && Math.abs(lift) < 0.4) { fab.style.transform = ''; return; }
+      fab.style.transform = `translateY(${lift.toFixed(1)}px) rotate(${tilt.toFixed(1)}deg)`;
+      raf = requestAnimationFrame(settle);
+    };
+    window.addEventListener('scroll', () => {
+      if (window.__oreoDragging) return;
+      if (state.chat?.hidden) return;
+      const fab = document.querySelector?.('#oreo-float .oreo-fab');
+      if (!fab) return;
+      const y = window.scrollY || 0;
+      const dy = y - lastY;
+      lastY = y;
+      if (!dy) return;
+      tilt = Math.max(-14, Math.min(14, tilt + dy * 0.06));
+      lift = Math.max(-12, Math.min(0, lift - Math.min(Math.abs(dy) * 0.03, 6)));
+      fab.style.transform = `translateY(${lift.toFixed(1)}px) rotate(${tilt.toFixed(1)}deg)`;
+      if (!raf) raf = requestAnimationFrame(settle);
+    }, { passive: true });
+  } catch { /* ignore */ }
+}
+
+function pushOreo(role, text) {
+  ensureOreoWelcome();
+  state.chat.messages.push({ id: uid(), role, text: String(text ?? '').slice(0, 6000) });
+  if (state.chat.messages.length > 100) state.chat.messages = state.chat.messages.slice(-100);
+}
+
+async function sendOreoMessage(raw) {
+  const text = String(raw ?? '').trim().slice(0, 2000);
+  if (!text || state.chat.typing) return;
+  ensureOreoWelcome();
+  pushOreo('user', text);
+  state.chat.input = '';
+  state.chat.typing = true;
+  state.chat.suggestions = [];
+  render();
+  document.querySelector('#oreo-messages')?.scrollTo?.({ top: 999999 });
+  try {
+    if (!state.guide) {
+      await new Promise((r) => setTimeout(r, 500));
+      pushOreo('bot', `Ooo good question! 🤩 First, toss a GitHub repo link in the box above, and I\'ll sniff it out like a treat! 🦴🐾\n\nAbout **${esc(text).slice(0, 120)}**:\n- Any public \`github.com/owner/repo\` link works! 🔗\n- No API key needed for the quick sniff! 🆓\n- Then come back and I\'ll cheer you through every step! 📣`);
+      state.chat.suggestions = [...OREO_QUICK];
+    } else {
+      const config = hasAiConfig() ? { ...state.settings } : null;
+      const response = await fetch('/api/insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: state.repoUrl, mode: 'custom', question: text, baseMode: 'recommendations', config }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'The chat could not answer right now.');
+      const { md, followUps } = insightToMarkdown(payload.insight);
+      pushOreo('bot', md);
+      state.chat.suggestions = followUps.length ? followUps : [...OREO_QUICK];
+    }
+  } catch (error) {
+    pushOreo('bot', `Eep! I tripped over my own tail! 🙈 ${String(error.message || 'Try again in a moment.')}\n\nDon\'t worry, champs bounce back! 💪 You can still:\n- Ask about an install step by name 🏷️\n- Paste a scary terminal error and I\'ll translate the gibberish! 🧪`);
+    state.chat.suggestions = [...OREO_QUICK];
+  } finally {
+    state.chat.typing = false;
+    render();
+    const box = document.querySelector('#oreo-messages');
+    if (box) box.scrollTop = box.scrollHeight;
+    document.querySelector('#oreo-input')?.focus?.();
+  }
+}
+
+function rotateOreoTip() {
+  if (!state.chat || state.chat.open || state.chat.muted || state.chat.hidden) return;
+  if (typeof window !== 'undefined' && window.__oreoDragging) return;
+  state.chat.tipIndex = (state.chat.tipIndex + 1) % OREO_TIPS.length;
+  const el = document.querySelector?.('#oreo-tip-text');
+  if (!el) return;
+  el.classList.remove('oreo-tip-anim');
+  void el.offsetWidth;
+  el.textContent = OREO_TIPS[state.chat.tipIndex];
+  el.classList.add('oreo-tip-anim');
+}
+
+function oreoHtml() {
+  ensureOreoWelcome();
+  const chat = state.chat;
+  if (chat.hidden) {
+    return `<div class="oreo-float" id="oreo-float"${oreoPositionStyle()}>
+    <button class="oreo-show" data-action="oreo-show" aria-label="Show ${esc(OREO_NAME)}" title="Show ${esc(OREO_NAME)}"><span aria-hidden="true">🐾</span> Oreo</button>
+  </div>`;
+  }
+  const tip = OREO_TIPS[chat.tipIndex % OREO_TIPS.length];
+  const showTip = !chat.open && !chat.muted;
+  const suggestions = chat.suggestions?.length ? chat.suggestions : OREO_QUICK;
+  const messages = chat.messages.map((m) => {
+    if (m.role === 'user') return `<div class="oreo-msg user"><div class="oreo-bubble-msg">${esc(m.text).replace(/\n/g, '<br />')}</div></div>`;
+    return `<div class="oreo-msg bot"><div class="oreo-msg-name">Oreo</div><div class="oreo-bubble-msg oreo-md">${oreoMarkdown(m.text)}</div></div>`;
+  }).join('');
+  return `<div class="oreo-float" id="oreo-float"${oreoPositionStyle()}>
+    ${showTip ? `<div class="oreo-tip" id="oreo-tip" role="status" aria-label="${esc(OREO_NAME)} says: ${esc(tip)}"><span class="oreo-tip-name">${esc(OREO_NAME)}</span><span class="oreo-tip-text oreo-tip-anim" id="oreo-tip-text">${esc(tip)}</span></div>` : ''}
+    ${chat.open ? `<section class="oreo-panel" role="dialog" aria-modal="false" aria-label="Chat with ${esc(OREO_NAME)}"${oreoPanelPositionStyle()}>
+      <header class="oreo-head" title="Drag to move this chat box (double-click resets)">
+        <span class="oreo-avatar" aria-hidden="true"><span class="oreo-avatar-dot"></span>😺</span>
+        <div class="oreo-head-text"><strong>Oreo 🎉</strong><span>cheer captain · ${state.guide ? esc(shortName(state.guide)) : 'no repo yet'} · ${state.chat.typing ? 'typing… ✍️' : 'online 💚'}</span></div>
+        <button class="oreo-icon-btn" data-action="oreo-close" aria-label="Close chat">✕</button>
+      </header>
+      <div class="oreo-messages" id="oreo-messages" aria-live="polite">${messages}${chat.typing ? '<div class="oreo-msg bot"><div class="oreo-bubble-msg oreo-typing"><span></span><span></span><span></span></div></div>' : ''}</div>
+      ${suggestions.length && !chat.typing ? `<div class="oreo-chips">${suggestions.map((q) => `<button class="oreo-chip" data-action="oreo-chip" data-question="${esc(q)}">${esc(q)}</button>`).join('')}</div>` : ''}
+      <form class="oreo-form" id="oreo-form"><input id="oreo-input" class="oreo-input" placeholder="${state.guide ? 'Ask me anything, superstar! ✨' : 'Say hi to Oreo! 🐾'}" value="${esc(chat.input || '')}" maxlength="2000" autocomplete="off" aria-label="Message Oreo" /><button class="oreo-send" type="submit" aria-label="Send message">➤</button></form>
+    </section>` : ''}
+    <div class="oreo-controls" role="toolbar" aria-label="Oreo controls: mute chatter, hide bot">
+      <button class="oreo-ctrl-btn" data-action="oreo-mute" aria-pressed="${chat.muted}" title="${chat.muted ? 'Unmute Oreo chatter' : 'Mute Oreo chatter'}" aria-label="${chat.muted ? 'Unmute Oreo' : 'Mute Oreo'}">${chat.muted ? '🔇 muted' : '🔊'}</button>
+      <button class="oreo-ctrl-btn" data-action="oreo-hide" title="Hide Oreo" aria-label="Hide Oreo">hide</button>
+    </div>
+    <button class="oreo-fab" data-action="oreo-toggle" aria-label="${chat.open ? 'Close' : 'Open'} chat with ${esc(OREO_NAME)} (drag Oreo to move him, double-click to dock back)" title="${esc(OREO_NAME)} — drag me anywhere! 🐾" aria-expanded="${chat.open}">
+      <dotlottie-player src="${OREO_LOTTIE}" autoplay loop style="width:72px;height:72px" aria-hidden="true"></dotlottie-player>
+    </button>
+  </div>`;
 }
 
 function routeNav() {
@@ -512,7 +1036,6 @@ function analysisView() {
     ${revisionTrail()}
     <div class="overview-strip" data-reveal><div class="overview-cell summary"><div class="cell-label">Analysis summary</div><div class="cell-value overview-summary">${esc(guide.summary || 'A structured installation path for this repository.')}</div></div><div class="overview-cell branch"><div class="cell-label">Default branch</div><div class="cell-value mono">${esc(repo.defaultBranch || 'main')}</div></div><div class="overview-cell language"><div class="cell-label">Language</div><div class="cell-value">${esc(repo.language || 'Not detected')}</div></div><div class="overview-cell files"><div class="cell-label">Files inspected</div><div class="cell-value mono">${(guide.files || []).length}</div></div></div>
     ${plainOverviewPanel()}
-    ${explorerSection()}
     <div class="dashboard-grid" id="route-evidence" data-reveal>
       <div class="primary-stack">
         <div class="info-grid"><section class="panel info-panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('layers', 15)}</div><div><h3>Dependencies</h3><p class="panel-subtitle">Installed as part of this repository</p></div></div><span class="panel-count">${guide.dependencies?.length || 0}</span></div><div class="info-list">${dependencyList(guide.dependencies)}</div></section><section class="panel info-panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('key', 15)}</div><div><h3>Requirements</h3><p class="panel-subtitle">Needed before the app can work</p></div></div><span class="panel-count">${guide.requirements?.length || 0}</span></div><div class="info-list">${requirementsList(guide.requirements)}</div></section></div>
@@ -1227,7 +1750,7 @@ function render() {
       liveTopbar = document.querySelector('#topbar-contrib');
     }
   } catch { liveField = null; liveTopbar = null; }
-  root.innerHTML = `<div class="app-shell">${topbar()}<div class="layout">${sidebar()}${content}</div>${mobileNav}${state.modal === 'settings' ? settingsModal() : ''}${state.modal === 'install' ? installModal() : ''}${state.modal === 'failure' ? failureModal() : ''}${state.modal === 'palette' ? paletteModal() : ''}${toastHtml()}<div class="sr-only" aria-live="polite">${esc(liveSummary())}</div></div>`;
+  root.innerHTML = `<div class="app-shell">${topbar()}<div class="layout">${sidebar()}${content}</div>${mobileNav}${state.modal === 'settings' ? settingsModal() : ''}${state.modal === 'install' ? installModal() : ''}${state.modal === 'failure' ? failureModal() : ''}${state.modal === 'palette' ? paletteModal() : ''}${toastHtml()}${oreoHtml()}<div class="sr-only" aria-live="polite">${esc(liveSummary())}</div></div>`;
   try {
     if (typeof document !== 'undefined' && document.querySelector) {
       const freshField = document.querySelector('#particles-workspace');
@@ -1248,12 +1771,10 @@ function liveSummary() {
   return `Route for ${shortName(state.guide)}: ${done} of ${total} steps confirmed${state.revisions.length ? `, revision ${currentRevision()}` : ''}.`;
 }
 
-function resetExplorer() {
-  state.insight = null;
-  state.insightLoading = null;
-  state.insightError = '';
-  state.insightCache = {};
-  state.insightQuestion = '';
+function resetOreoForRepo() {
+  // Keep the conversation across analyses so context is not lost; just make
+  // sure the welcome exists. The header already shows the current repo name.
+  ensureOreoWelcome();
 }
 
 async function analyze() {
@@ -1265,7 +1786,7 @@ async function analyze() {
   state.mode = 'loading';
   state.guide = null;
   state.checked = {};
-  resetExplorer();
+  resetOreoForRepo();
   state.openMenuId = null;
   state.renamingId = null;
   render();
@@ -1371,41 +1892,6 @@ async function analyzeWithPoll(body) {
   return payload.guide;
 }
 
-async function runInsight(mode, question = '', baseMode = '') {
-  if (state.mode !== 'analysis' || !state.guide) return;
-  const cacheKey = mode === 'custom' ? `custom:${question}` : mode;
-  if (state.insightCache[cacheKey]) {
-    state.insight = state.insightCache[cacheKey];
-    state.insightLoading = null;
-    state.insightError = '';
-    render();
-    document.querySelector('.insight-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    return;
-  }
-  state.insightLoading = mode;
-  state.insightError = '';
-  render();
-  try {
-    const config = hasAiConfig() ? { ...state.settings } : null;
-    const response = await fetch('/api/insight', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repoUrl: state.repoUrl, mode, question, baseMode: baseMode || undefined, config }),
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) throw new Error(payload.error || 'The explorer could not answer right now.');
-    state.insight = payload.insight;
-    state.insightCache[cacheKey] = payload.insight;
-    state.insightLoading = null;
-    render();
-    document.querySelector('.insight-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  } catch (error) {
-    state.insightLoading = null;
-    state.insightError = error.message || 'Explorer request failed.';
-    render();
-  }
-}
-
 function readSettingsFromForm() {
   const baseUrl = document.querySelector('#base-url')?.value.trim() || '';
   const endpoint = document.querySelector('#endpoint')?.value.trim() || '/chat/completions';
@@ -1447,7 +1933,7 @@ async function copyText(text) {
   try { await navigator.clipboard.writeText(text); showToast('Copied to clipboard.'); }
   catch { showToast('Copy was blocked by the browser. Select the command manually.', 'error'); }
 }
-function newAnalysis() { state.mode = 'empty'; state.repoUrl = ''; state.guide = null; state.checked = {}; state.error = ''; state.modal = null; state.recovery = null; emptySession(); state.openMenuId = null; state.renamingId = null; resetExplorer(); render(); document.querySelector('#repo-input')?.focus(); }
+function newAnalysis() { state.mode = 'empty'; state.repoUrl = ''; state.guide = null; state.checked = {}; state.error = ''; state.modal = null; state.recovery = null; emptySession(); state.openMenuId = null; state.renamingId = null; resetOreoForRepo(); render(); document.querySelector('#repo-input')?.focus(); }
 function restoreHistory(id) {
   const entry = state.history.find((item) => item.id === id) || state.history[Number(id)];
   if (!entry?.guide) return;
@@ -1462,7 +1948,7 @@ function restoreHistory(id) {
   state.renamingId = null;
   state.expandedDirs = {};
   state.treeFilter = '';
-  resetExplorer();
+  resetOreoForRepo();
   render();
 }
 
@@ -1538,19 +2024,32 @@ function bindEvents() {
     const next = document.querySelector('#tree-filter');
     if (next) { next.focus(); try { next.setSelectionRange(pos, pos); } catch { /* ignore */ } }
   });
-  // Features 3 + 4: explorer + follow-ups
-  document.querySelectorAll('[data-action="explorer"]').forEach((el) => el.addEventListener('click', () => runInsight(el.dataset.mode)));
-  document.querySelectorAll('[data-action="followup"]').forEach((el) => el.addEventListener('click', () => runInsight('custom', el.dataset.question, el.dataset.basemode)));
-  document.querySelectorAll('[data-action="insight-close"]').forEach((el) => el.addEventListener('click', () => { state.insight = null; state.insightError = ''; render(); }));
-  document.querySelector('#insight-question')?.addEventListener('input', (event) => { state.insightQuestion = event.target.value; });
-  document.querySelector('#insight-base')?.addEventListener('change', (event) => { state.insightBase = event.target.value; });
-  document.querySelector('#insight-custom')?.addEventListener('submit', (event) => {
+  // Oreo the cat bot: floating messenger (move / hide / mute)
+  document.querySelectorAll('[data-action="oreo-toggle"]').forEach((el) => el.addEventListener('click', () => toggleOreo()));
+  document.querySelectorAll('[data-action="oreo-close"]').forEach((el) => el.addEventListener('click', () => toggleOreo(false)));
+  document.querySelectorAll('[data-action="oreo-mute"]').forEach((el) => el.addEventListener('click', () => setOreoMuted(!state.chat.muted)));
+  document.querySelectorAll('[data-action="oreo-hide"]').forEach((el) => el.addEventListener('click', () => setOreoHidden(true)));
+  document.querySelectorAll('[data-action="oreo-show"]').forEach((el) => el.addEventListener('click', () => setOreoHidden(false)));
+  document.querySelectorAll('[data-action="oreo-chip"]').forEach((el) => el.addEventListener('click', () => sendOreoMessage(el.dataset.question)));
+  initOreoDrag();
+  initOreoPanelDrag();
+  initOreoScrollWiggle();
+  document.querySelector('#oreo-input')?.addEventListener('input', (event) => { state.chat.input = event.target.value; });
+  document.querySelector('#oreo-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
-    const question = document.querySelector('#insight-question')?.value.trim() || '';
-    if (!question) { showToast('Type a question about this repository first.', 'error'); return; }
-    state.insightQuestion = question;
-    runInsight('custom', question, document.querySelector('#insight-base')?.value || 'recommendations');
+    const value = document.querySelector('#oreo-input')?.value || '';
+    if (!value.trim()) return;
+    sendOreoMessage(value);
   });
+  // Rotating tooltip: the robot "says" something new every few seconds.
+  try {
+    if (typeof window !== 'undefined' && !window.__oreoTipTimer && typeof setInterval !== 'undefined' && typeof document !== 'undefined' && document.querySelector?.('#app')) {
+      window.__oreoTipTimer = setInterval(rotateOreoTip, 7000);
+      if (window.__oreoTipTimer && typeof window.__oreoTipTimer.unref === 'function') window.__oreoTipTimer.unref();
+    }
+  } catch { /* ignore */ }
+  const oreoBox = document.querySelector('#oreo-messages');
+  if (oreoBox && state.chat.open) oreoBox.scrollTop = oreoBox.scrollHeight;
   document.querySelectorAll('[data-step-id]').forEach((el) => el.addEventListener('change', (event) => { state.checked[event.target.dataset.stepId] = event.target.checked; persistSession(); render(); }));
   // v2: reader mode, graph branch, failure recovery, contract ticks
   document.querySelectorAll('[data-expertise]').forEach((el) => el.addEventListener('click', () => setExpertise(el.dataset.expertise)));
@@ -1575,7 +2074,12 @@ function bindEvents() {
   document.querySelectorAll('[data-contract-id]').forEach((el) => el.addEventListener('change', (event) => toggleContractItem(event.target.dataset.contractId)));
   document.querySelectorAll('[data-action="ask-failure"]').forEach((el) => el.addEventListener('click', () => {
     const pattern = (state.guide?.failureScan?.patterns || []).find((entry) => entry.id === el.dataset.failure);
-    if (pattern) runInsight('custom', `Why does "${pattern.label}" break this install, and what is the exact fix for my setup?`, 'bugs');
+    const q = pattern ? `Why does "${pattern.label}" break this install, and what is the exact fix for my setup?` : 'What usually breaks this install?';
+    console.log('Open Chat');
+    ensureOreoWelcome();
+    state.chat.open = true;
+    render();
+    sendOreoMessage(q);
   }));
   document.querySelector('#explanation-select')?.addEventListener('change', (event) => { state.explanationIndex = Number(event.target.value); render(); });
   document.querySelectorAll('[data-copy]').forEach((el) => el.addEventListener('click', () => copyText(el.dataset.copy)));
@@ -1633,6 +2137,7 @@ document.addEventListener('keydown', (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && state.mode !== 'loading') { event.preventDefault(); analyze(); }
   if (event.key === 'Escape' && state.modal) { closeModal(); }
   else if (event.key === 'Escape' && state.openMenuId) { state.openMenuId = null; render(); }
+  else if (event.key === 'Escape' && state.chat?.open) { state.chat.open = false; render(); }
 });
 document.addEventListener('click', (event) => {
   if (state.openMenuId && !event.target.closest?.('.menu-wrap')) { state.openMenuId = null; render(); }
@@ -1659,9 +2164,10 @@ function resumeActiveSession() {
 }
 
 resumeActiveSession();
+loadOreoPrefs();
 
 render();
 
 // Named exports exist only so tests/render.test.mjs can drive the real client
 // module in Node. The browser loads this file as a module either way.
-export { state, render, activePath, installScript, setPathOption, setExpertise, emptySession, sessionSnapshot, hydrateSession };
+export { state, render, activePath, installScript, setPathOption, setExpertise, emptySession, sessionSnapshot, hydrateSession, oreoMarkdown, oreoHtml, toggleOreo, sendOreoMessage, setOreoMuted, setOreoHidden, loadOreoPrefs, saveOreoPrefs, oreoClampPos, oreoShouldSuppressClick, oreoSpringStep, oreoPanelPositionStyle, OREO_NAME, OREO_TIPS };

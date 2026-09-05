@@ -68,7 +68,12 @@ test('a full guide renders every v2 panel', async () => {
   assert.equal((html.match(/data-action="step-failed"/g) || []).length, activePath().length);
   assert.match(html, /Seen in 3 reported threads/, 'the guard text explains itself');
   assert.match(html, /In plain English/, 'pre-existing panels survive');
-  assert.match(html, /Curious Explorer/);
+  assert.doesNotMatch(html, /Curious Explorer/, 'the old inline explorer is removed');
+  assert.match(html, /oreo-float/, 'the floating Oreo chatbot replaces it');
+  assert.match(html, /Oreo the cat bot/, 'the tooltip names Oreo');
+  assert.match(html, /dotlottie-player/, 'the robot uses the dotLottie player');
+  assert.match(html, /stZ4jBVCdO\.lottie/, 'the requested robot animation is used');
+  assert.match(html, /data-action="oreo-toggle"/, 'the robot is wrapped in a button');
   assert.doesNotMatch(html, />undefined|\[object Object\]/);
 });
 

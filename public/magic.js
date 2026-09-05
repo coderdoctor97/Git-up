@@ -6,7 +6,7 @@
 // import in Node tests. Call all three from bindEvents() after every render,
 // since render() replaces innerHTML.
 
-const SPOTLIGHT_SELECTOR = '.panel, .seg-option, .explorer-btn, .route-preview, .route-status';
+const SPOTLIGHT_SELECTOR = '.panel, .seg-option, .oreo-panel, .oreo-chip, .route-preview, .route-status';
 
 /** Track the cursor per card so magic.css can paint the glow at --mx/--my. */
 export function bindSpotlight(scope) {

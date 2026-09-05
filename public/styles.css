@@ -873,3 +873,300 @@ textarea.text-field { height: auto; }
 [data-theme="light"] .new-analysis:hover { box-shadow: 0 14px 25px rgba(20, 40, 32, .18); }
 [data-theme="light"] .rule-label,
 [data-theme="light"] .seg-label em { color: #52655e; }
+
+/* ===========================================================================
+   Oreo the cat bot — floating Lottie button + messenger panel.
+   Fixed 20px/20px bottom-right, z-index above every app layer.
+   =========================================================================== */
+/* Excalidraw-style handwriting, messenger ONLY. Served locally from
+   /assets/fonts/ so the rest of the site keeps its own type. */
+@font-face {
+  font-family: 'Excalifont';
+  src: url('/assets/fonts/Excalifont-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+.oreo-panel, .oreo-tip {
+  --oreo-hand: 'Excalifont', 'Segoe Print', 'Comic Sans MS', 'Chalkboard SE', cursive;
+}
+.oreo-bubble-msg, .oreo-input, .oreo-chip, .oreo-tip-text, .oreo-head-text strong, .oreo-head-text span {
+  font-family: var(--oreo-hand);
+}
+/* Code stays monospace even inside the messenger — readability first. */
+.oreo-pre, .oreo-pre code, .oreo-code { font-family: var(--mono); }
+.oreo-float {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  pointer-events: none;
+}
+.oreo-float > * { pointer-events: auto; }
+.oreo-fab {
+  width: 76px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  cursor: grab;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .65));
+  transition: transform var(--dur-instant) var(--ease);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.oreo-fab:hover { transform: translateY(-2px) scale(1.03); }
+.oreo-fab:active { transform: scale(.96); cursor: grabbing; }
+.oreo-fab:focus-visible { outline: 2px solid var(--route); outline-offset: 4px; }
+.oreo-fab dotlottie-player { width: 72px; height: 72px; display: block; pointer-events: none; }
+.oreo-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+}
+.oreo-ctrl-btn {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--muted);
+  background: rgba(10, 15, 18, .85);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+.oreo-ctrl-btn:hover { color: var(--text); border-color: var(--line-strong); background: rgba(20, 28, 33, .95); }
+.oreo-ctrl-btn[aria-pressed="true"] { color: var(--route-bright); border-color: var(--route-line); }
+.oreo-float.oreo-dragging { transition: none; }
+.oreo-float.oreo-dragging .oreo-fab { transform: none; }
+.oreo-float.oreo-dragging, .oreo-float.oreo-dragging .oreo-fab { cursor: grabbing; }
+.oreo-show {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 13px;
+  color: var(--muted);
+  background: rgba(10, 15, 18, .9);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .6);
+  backdrop-filter: blur(8px);
+}
+.oreo-show:hover { color: var(--route-bright); border-color: var(--route-line); }
+.oreo-tip {
+  max-width: 180px;
+  padding: 7px 10px 8px;
+  display: grid;
+  gap: 2px;
+  color: var(--text);
+  background: var(--panel-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px 14px 4px 14px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .6);
+  font-size: 11px;
+  line-height: 1.45;
+  animation: oreo-tip-in var(--dur-normal) var(--ease) both;
+}
+.oreo-tip-name { color: var(--route); font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.oreo-tip-text { color: var(--text); }
+.oreo-tip-anim { animation: oreo-tip-fade .5s var(--ease) both; }
+@keyframes oreo-tip-in { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes oreo-tip-fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.oreo-panel {
+  /* Docked in the blank left gutter (clear of the 240px sidebar), fixed to
+     the viewport so it stays nearby no matter how far you have scrolled.
+     The robot himself stays wherever you dragged him. */
+  position: fixed;
+  left: 264px;
+  bottom: 24px;
+  z-index: 10000;
+  width: min(320px, calc(100vw - 300px));
+  height: min(440px, calc(100vh - 190px));
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 18px;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, .65);
+  animation: modal-in var(--dur-normal) var(--ease) both;
+}
+.oreo-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 13px 14px;
+  background: var(--panel-raised);
+  border-bottom: 1px solid var(--line);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.oreo-head:active { cursor: grabbing; }
+.oreo-head button { cursor: pointer; }
+.oreo-panel.oreo-panel-dragging { cursor: grabbing; }
+.oreo-panel.oreo-panel-dragging .oreo-head { cursor: grabbing; }
+.oreo-avatar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  color: var(--bg-deep);
+  background: var(--route);
+  border-radius: 50%;
+  font-weight: 800;
+  font-size: 17px;
+}
+.oreo-avatar-dot {
+  position: absolute;
+  right: 0;
+  bottom: 1px;
+  width: 10px;
+  height: 10px;
+  background: #2ecc71;
+  border: 2px solid var(--panel-raised);
+  border-radius: 50%;
+}
+.oreo-head-text { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.oreo-head-text strong { font-size: 13px; letter-spacing: -.01em; }
+.oreo-head-text span { color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.oreo-icon-btn {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: transparent;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.oreo-icon-btn:hover { color: var(--text); background: rgba(255, 255, 255, .06); }
+.oreo-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 12px;
+  scrollbar-width: thin;
+}
+.oreo-msg { display: flex; }
+.oreo-msg.user { justify-content: flex-end; }
+.oreo-msg.bot { justify-content: flex-start; flex-direction: column; align-items: flex-start; gap: 3px; }
+.oreo-msg-name { color: var(--muted-2); font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding-left: 4px; }
+.oreo-bubble-msg {
+  max-width: 88%;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  border-radius: 14px;
+  overflow-wrap: anywhere;
+}
+.oreo-msg.user .oreo-bubble-msg { color: var(--bg-deep); background: var(--route); border-bottom-right-radius: 4px; font-weight: 500; }
+.oreo-msg.bot .oreo-bubble-msg { color: var(--text); background: var(--panel-raised); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+/* Standard markdown inside bot bubbles */
+.oreo-md p { margin: 0 0 8px; color: inherit; }
+.oreo-md p:last-child { margin-bottom: 0; }
+.oreo-md h3, .oreo-md h4, .oreo-md h5, .oreo-md h6 { margin: 4px 0 8px; font-size: 13px; letter-spacing: -.01em; line-height: 1.4; }
+.oreo-md ul, .oreo-md ol { margin: 0 0 8px; padding-left: 20px; display: grid; gap: 4px; }
+.oreo-md li { line-height: 1.6; }
+.oreo-md li::marker { color: var(--route); }
+.oreo-md a { color: var(--route-bright); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.oreo-md blockquote { margin: 0 0 8px; padding: 8px 10px; color: #c9ecdd; background: rgba(127, 224, 178, .07); border-left: 3px solid var(--route); border-radius: 0 8px 8px 0; font-size: 11.5px; }
+.oreo-md hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+.oreo-code { padding: 1px 5px; color: #b8d7d1; background: #0a1114; border: 1px solid rgba(178, 197, 190, .14); border-radius: 5px; font-family: var(--mono); font-size: 10.5px; }
+.oreo-pre { margin: 0 0 8px; max-width: 100%; overflow: auto; padding: 10px 11px; color: #c0d8d3; background: #090f12; border: 1px solid var(--line); border-radius: 9px; font-family: var(--mono); font-size: 10.5px; line-height: 1.6; white-space: pre-wrap; }
+.oreo-pre:last-child { margin-bottom: 0; }
+.oreo-table-wrap { max-width: 100%; overflow: auto; margin: 0 0 8px; border: 1px solid var(--line); border-radius: 9px; }
+.oreo-table-wrap table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.oreo-table-wrap th, .oreo-table-wrap td { padding: 7px 9px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.oreo-table-wrap th { color: var(--text); background: var(--panel-soft); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+.oreo-table-wrap tr:last-child td { border-bottom: 0; }
+.oreo-chips { display: flex; gap: 7px; overflow-x: auto; padding: 4px 12px 10px; scrollbar-width: none; }
+.oreo-chips::-webkit-scrollbar { display: none; }
+.oreo-chip {
+  flex: none;
+  padding: 7px 11px;
+  color: var(--muted);
+  background: var(--panel-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.oreo-chip:hover { color: var(--route-bright); border-color: var(--route-line); background: var(--route-dim); }
+.oreo-form { display: flex; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--line); background: var(--panel-soft); }
+.oreo-input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 13px;
+  color: var(--text);
+  background: var(--bg-deep);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  outline: 0;
+}
+.oreo-input:focus { border-color: var(--route); box-shadow: 0 0 0 3px rgba(127, 224, 178, .08); }
+.oreo-send {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  color: var(--bg-deep);
+  background: var(--route);
+  border-radius: 50%;
+  font-size: 15px;
+}
+.oreo-send:hover { background: var(--route-bright); }
+.oreo-typing { display: inline-flex; gap: 5px; align-items: center; padding: 13px 14px; }
+.oreo-typing span { width: 7px; height: 7px; background: var(--muted); border-radius: 50%; animation: oreo-blink 1.1s infinite; }
+.oreo-typing span:nth-child(2) { animation-delay: .15s; }
+.oreo-typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes oreo-blink { 0%, 60%, 100% { opacity: .25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+[data-theme="light"] .oreo-tip { background: #ffffff; }
+[data-theme="light"] .oreo-panel { background: #ffffff; }
+[data-theme="light"] .oreo-head { background: #f2f5f3; }
+[data-theme="light"] .oreo-msg.bot .oreo-bubble-msg { background: #f2f5f3; }
+[data-theme="light"] .oreo-md a { color: #0b7a55; }
+[data-theme="light"] .oreo-md blockquote { color: #0b5c40; }
+[data-theme="light"] .oreo-form { background: #f7faf8; }
+[data-theme="light"] .oreo-input { background: #ffffff; }
+@media (max-width: 1050px) {
+  /* Collapsed 64px icon sidebar: keep the panel clear of it. */
+  .oreo-panel { left: 84px; width: min(320px, calc(100vw - 108px)); }
+}
+@media (max-width: 600px) {
+  .oreo-float { right: 12px; bottom: 64px; }
+  .oreo-fab { width: 64px; height: 64px; }
+  .oreo-fab dotlottie-player { width: 60px; height: 60px; }
+  /* No sidebar on mobile: bottom sheet above the mobile nav. */
+  .oreo-panel { left: 12px; right: 12px; bottom: 76px; width: auto; height: min(400px, calc(100vh - 190px)); }
+  .oreo-tip { max-width: 190px; font-size: 11px; }
+}

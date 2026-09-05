@@ -2,6 +2,10 @@ import { composeSteps, keyOf, progressOf, applyRevision, revisionEntry, selectio
 import { bindSpotlight, bindTickers, bindReveals } from './magic.js';
 import { initParticles } from './particles-workspace.js';
 import { initTopbarContributions } from './topbar-contributions.js';
+import { AIProvider, loadProviderState, saveProviderState, getConnectionStatus } from './ai/provider-state.js';
+import { ensurePuter, getPuter, isPuterSdkLoaded, loadPuterSdk } from './ai/puter-loader.js';
+import * as puterProvider from './ai/puter-provider.js';
+import * as customProvider from './ai/custom-provider.js';
 
 const root = document.querySelector('#app');
 
@@ -83,6 +87,9 @@ const savedHistory = (Array.isArray(rawHistory) ? rawHistory : []).map((entry) =
   session: entry.session && typeof entry.session === 'object' ? entry.session : null,
 })).filter((entry) => entry.url && entry.guide);
 
+// --- Provider state (Free AI + Custom API) ---
+const savedProviderState = loadProviderState();
+
 const state = {
   mode: 'empty',
   repoUrl: '',
@@ -97,6 +104,17 @@ const state = {
   modelOptions: Array.isArray(savedSettings.modelOptions) ? savedSettings.modelOptions : [],
   history: savedHistory,
   secretVisible: false,
+  // AI Provider abstraction - Mode A Custom API, Mode B Free AI (Puter)
+  aiProvider: savedProviderState.activeProvider || AIProvider.CUSTOM,
+  puter: {
+    connected: Boolean(savedProviderState.puter?.connected),
+    connecting: false,
+    testing: false,
+    error: '',
+    testResult: '',
+    user: null,
+    authChecked: false,
+  },
   // Oreo the cat bot — floating messenger chatbot (replaces the old inline explorer)
   chat: { open: false, messages: [], typing: false, tipIndex: 0, input: '', hidden: false, muted: false, pos: null, panelPos: null },
   // v2 features: living path, graph, contract, reader mode
@@ -122,8 +140,98 @@ const state = {
   progress: { phase: '', label: '', percent: 0, error: '' },
 };
 
-function hasAiConfig() { return Boolean(state.settings.baseUrl && state.settings.apiKey && state.settings.model); }
-function sourceLabel() { return state.guide?.source === 'ai' ? 'AI reviewed' : 'Local scan'; }
+function hasCustomConfig() { return Boolean(state.settings.baseUrl && state.settings.apiKey && state.settings.model); }
+// Backward compat alias - old code used hasAiConfig
+function hasAiConfig() { return hasCustomConfig() || (state.aiProvider === AIProvider.PUTER && state.puter.connected); }
+function hasAnyAiConfig() {
+  if (state.aiProvider === AIProvider.PUTER) return state.puter.connected;
+  return hasCustomConfig();
+}
+function isPuterActive() { return state.aiProvider === AIProvider.PUTER; }
+function isCustomActive() { return state.aiProvider === AIProvider.CUSTOM; }
+function sourceLabel() {
+  const src = state.guide?.source;
+  if (src === 'ai' || src === 'puter') return 'AI reviewed';
+  return 'Local scan';
+}
+
+function getAiStatus() {
+  const hasCustom = hasCustomConfig();
+  const puterConnected = state.puter.connected;
+  let puterSignedIn = false;
+  try {
+    if (typeof window !== 'undefined' && window.puter?.auth?.isSignedIn) {
+      puterSignedIn = !!window.puter.auth.isSignedIn();
+    } else {
+      puterSignedIn = puterConnected; // fallback to persisted
+    }
+  } catch {
+    puterSignedIn = puterConnected;
+  }
+  return getConnectionStatus({
+    activeProvider: state.aiProvider,
+    hasCustomConfig: hasCustom,
+    puterConnected,
+    puterSignedIn,
+    error: state.puter.error || '',
+  });
+}
+
+function saveProviderStateToStorage() {
+  try {
+    saveProviderState({
+      activeProvider: state.aiProvider,
+      puter: { connected: state.puter.connected },
+    });
+  } catch {}
+}
+
+async function checkPuterAuthOnStartup() {
+  try {
+    if (typeof window === 'undefined') return;
+    // Wait a bit for SDK to be available
+    let attempts = 0;
+    while (attempts < 20 && !isPuterSdkLoaded()) {
+      await new Promise(r => setTimeout(r, 100));
+      attempts++;
+    }
+    if (!isPuterSdkLoaded()) {
+      state.puter.authChecked = true;
+      return;
+    }
+    const puter = getPuter();
+    if (!puter?.auth?.isSignedIn) {
+      state.puter.authChecked = true;
+      render();
+      return;
+    }
+    const signedIn = !!puter.auth.isSignedIn();
+    if (signedIn && !state.puter.connected) {
+      // User is signed in but we didn't have persisted connected - auto restore
+      state.puter.connected = true;
+      saveProviderStateToStorage();
+    } else if (!signedIn && state.puter.connected) {
+      // Session expired - keep connected false? Actually keep true but status will show sign-in required
+      // Check via getUser as fallback
+      try {
+        const user = await puter.auth.getUser();
+        if (user) {
+          state.puter.user = user;
+        } else {
+          // Not signed in, but keep persisted connected flag - UI will show sign-in required
+        }
+      } catch {}
+    } else if (signedIn) {
+      try {
+        state.puter.user = await puter.auth.getUser();
+      } catch {}
+    }
+    state.puter.authChecked = true;
+    render();
+  } catch {
+    state.puter.authChecked = true;
+  }
+}
 function showToast(message, type = 'success') {
   state.toast = { message, type };
   render();
@@ -143,8 +251,10 @@ function errorKindOf(message) {
 }
 
 function topbar() {
-  const aiReady = hasAiConfig();
+  const aiStatus = getAiStatus();
   const toLight = state.theme !== 'light';
+  const dotClass = aiStatus.dot === 'online' ? 'online' : aiStatus.dot === 'error' ? 'error' : '';
+  const statusLabel = aiStatus.label;
   return `<header class="topbar">
     <div id="topbar-contrib" aria-hidden="true"></div>
     <a class="brand" href="#" data-action="new-analysis" aria-label="Git-Up home">
@@ -156,7 +266,7 @@ function topbar() {
     </a>
     <div class="topbar-center"><span>Route</span><span class="slash">/</span><strong>${state.mode === 'analysis' ? esc(displayName({ label: '', name: shortName(state.guide) })) : 'New analysis'}</strong></div>
     <div class="topbar-actions">
-      <div class="connection-pill"><i class="status-dot ${aiReady ? 'online' : ''}"></i><span>${aiReady ? 'AI connected' : 'Local scan ready'}</span></div>
+      <button class="connection-pill" data-action="settings" aria-label="AI status: ${esc(statusLabel)}" title="${esc(statusLabel)} — click for settings"><i class="status-dot ${dotClass}"></i><span>${esc(statusLabel)}</span></button>
       <button class="icon-button" data-action="palette" aria-label="Open command menu (Ctrl K)" title="Command menu (Ctrl K)">${icon('search', 18)}</button>
       <button class="icon-button" data-action="theme" aria-label="${toLight ? 'Switch to daylight mode' : 'Switch to dark mode'}" title="${toLight ? 'Daylight mode' : 'Dark mode'}">${icon(toLight ? 'sun' : 'moon', 18)}</button>
       <button class="icon-button" data-action="settings" aria-label="Open AI settings" title="AI settings">${icon('settings', 18)}</button>
@@ -943,17 +1053,29 @@ async function sendOreoMessage(raw) {
       pushOreo('bot', `Ooo good question! 🤩 First, toss a GitHub repo link in the box above, and I\'ll sniff it out like a treat! 🦴🐾\n\nAbout **${esc(text).slice(0, 120)}**:\n- Any public \`github.com/owner/repo\` link works! 🔗\n- No API key needed for the quick sniff! 🆓\n- Then come back and I\'ll cheer you through every step! 📣`);
       state.chat.suggestions = [...OREO_QUICK];
     } else {
-      const config = hasAiConfig() ? { ...state.settings } : null;
-      const response = await fetch('/api/insight', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: state.repoUrl, mode: 'custom', question: text, baseMode: 'recommendations', config, session: oreoSessionSnapshot() }),
-      });
-      const payload = await response.json();
-      if (!response.ok || !payload.ok) throw new Error(payload.error || 'The chat could not answer right now.');
-      const { md, followUps } = insightToMarkdown(payload.insight);
-      pushOreo('bot', md);
-      state.chat.suggestions = followUps.length ? followUps : [...OREO_QUICK];
+      if (isPuterActive() && state.puter.connected) {
+        try {
+          const insight = await puterProvider.generateInsight(text, oreoSessionSnapshot(), { repoUrl: state.repoUrl, guide: state.guide });
+          const { md, followUps } = insightToMarkdown(insight);
+          pushOreo('bot', md);
+          state.chat.suggestions = followUps.length ? followUps : [...OREO_QUICK];
+        } catch (puterErr) {
+          console.warn('Puter insight failed', puterErr);
+          throw new Error(puterErr.message || 'Free AI temporarily unavailable. Please try again.');
+        }
+      } else {
+        const config = (hasCustomConfig() && isCustomActive()) ? { ...state.settings } : null;
+        const response = await fetch('/api/insight', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ repoUrl: state.repoUrl, mode: 'custom', question: text, baseMode: 'recommendations', config, session: oreoSessionSnapshot() }),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.error || 'The chat could not answer right now.');
+        const { md, followUps } = insightToMarkdown(payload.insight);
+        pushOreo('bot', md);
+        state.chat.suggestions = followUps.length ? followUps : [...OREO_QUICK];
+      }
     }
   } catch (error) {
     pushOreo('bot', `Eep! I tripped over my own tail! 🙈 ${String(error.message || 'Try again in a moment.')}\n\nDon\'t worry, champs bounce back! 💪 You can still:\n- Ask about an install step by name 🏷️\n- Paste a scary terminal error and I\'ll translate the gibberish! 🧪`);
@@ -1083,7 +1205,90 @@ function analysisView() {
 
 function settingsModal() {
   const models = [...new Set([...(state.modelOptions || []), state.settings.model].filter(Boolean))];
-  return `<div class="modal-layer" data-action="close-on-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div class="modal-head"><div><h2 id="settings-title">AI provider</h2><p>Connect an OpenAI-compatible endpoint for a deeper repository review. AI is optional: the heuristic scan stays fully usable without it. Keys remain in this browser session.</p></div><button class="icon-button" data-action="close-modal" aria-label="Close settings">${icon('close', 18)}</button></div><form class="modal-body" id="settings-form"><div class="inline-fields"><div class="form-field"><label for="base-url">Base URL <span>required</span></label><input class="text-field" id="base-url" value="${esc(state.settings.baseUrl)}" placeholder="https://api.openai.com/v1" /></div><div class="form-field"><label for="endpoint">Chat endpoint <span>required</span></label><input class="text-field" id="endpoint" value="${esc(state.settings.endpoint)}" placeholder="/chat/completions" /></div></div><div class="form-field"><label for="api-key">API key <span>session only</span></label><div class="secret-field"><input class="text-field" id="api-key" type="${state.secretVisible ? 'text' : 'password'}" value="${esc(state.settings.apiKey)}" placeholder="sk-…" autocomplete="off" /> <button class="reveal-key" type="button" data-action="toggle-key" aria-label="${state.secretVisible ? 'Hide' : 'Show'} API key">${icon(state.secretVisible ? 'eyeOff' : 'eye', 15)}</button></div><p class="field-hint">Used only for requests from this session. It is never saved to the server or included in a repository guide.</p></div><div class="form-field"><label for="model">Model <span>${models.length ? `${models.length} available` : 'fetch from provider'}</span></label><div class="model-row"><select class="select-field" id="model"><option value="">Select a model…</option>${models.map((model) => `<option value="${esc(model)}" ${model === state.settings.model ? 'selected' : ''}>${esc(model)}</option>`).join('')}</select><button type="button" class="fetch-button" data-action="fetch-models">${icon('refresh', 13)} Fetch models</button></div><p class="field-hint">Git-Up requests <span class="mono">GET /models</span> from your base URL. Your provider may use a different models endpoint.</p></div><div id="settings-status" class="settings-status" aria-live="polite"></div><div class="modal-foot"><button type="button" class="secondary-button" data-action="close-modal">Cancel</button><button class="install-button" type="submit">${icon('check', 14)} Save configuration</button></div></form></section></div>`;
+  const isCustom = state.aiProvider === AIProvider.CUSTOM;
+  const isPuter = state.aiProvider === AIProvider.PUTER;
+  const aiStatus = getAiStatus();
+  const puterConnected = state.puter.connected;
+  const puterConnecting = state.puter.connecting;
+  const puterTesting = state.puter.testing;
+
+  const providerSelector = `<div class="provider-selector" role="radiogroup" aria-label="AI Provider">
+    <label class="provider-option ${isCustom ? 'active' : ''}" role="radio" aria-checked="${isCustom}">
+      <input type="radio" name="ai-provider" value="custom" ${isCustom ? 'checked' : ''} data-action="select-custom" />
+      <span class="provider-radio"></span>
+      <span class="provider-content">
+        <strong>Custom API</strong>
+        <span>Use your own OpenAI-compatible API endpoint.</span>
+      </span>
+    </label>
+    <label class="provider-option ${isPuter ? 'active' : ''}" role="radio" aria-checked="${isPuter}">
+      <input type="radio" name="ai-provider" value="puter" ${isPuter ? 'checked' : ''} data-action="select-puter" />
+      <span class="provider-radio"></span>
+      <span class="provider-content">
+        <strong>Git-Up Free</strong>
+        <span>No API key required. Connect and start using AI.</span>
+      </span>
+      <span class="provider-badge">Free</span>
+    </label>
+  </div>`;
+
+  const customSection = `<div class="provider-panel ${isCustom ? '' : 'hidden'}" id="custom-panel">
+    <form class="modal-body-inner" id="settings-form">
+      <div class="inline-fields"><div class="form-field"><label for="base-url">Base URL <span>required</span></label><input class="text-field" id="base-url" value="${esc(state.settings.baseUrl)}" placeholder="https://api.openai.com/v1" /></div><div class="form-field"><label for="endpoint">Chat endpoint <span>required</span></label><input class="text-field" id="endpoint" value="${esc(state.settings.endpoint)}" placeholder="/chat/completions" /></div></div><div class="form-field"><label for="api-key">API key <span>session only</span></label><div class="secret-field"><input class="text-field" id="api-key" type="${state.secretVisible ? 'text' : 'password'}" value="${esc(state.settings.apiKey)}" placeholder="sk-…" autocomplete="off" /> <button class="reveal-key" type="button" data-action="toggle-key" aria-label="${state.secretVisible ? 'Hide' : 'Show'} API key">${icon(state.secretVisible ? 'eyeOff' : 'eye', 15)}</button></div><p class="field-hint">Used only for requests from this session. It is never saved to the server or included in a repository guide.</p></div><div class="form-field"><label for="model">Model <span>${models.length ? `${models.length} available` : 'fetch from provider'}</span></label><div class="model-row"><select class="select-field" id="model"><option value="">Select a model…</option>${models.map((model) => `<option value="${esc(model)}" ${model === state.settings.model ? 'selected' : ''}>${esc(model)}</option>`).join('')}</select><button type="button" class="fetch-button" data-action="fetch-models">${icon('refresh', 13)} Fetch models</button></div><p class="field-hint">Git-Up requests <span class="mono">GET /models</span> from your base URL. Your provider may use a different models endpoint.</p></div><div id="settings-status" class="settings-status" aria-live="polite"></div>
+      <div class="modal-foot"><button type="button" class="secondary-button" data-action="close-modal">Cancel</button><button class="install-button" type="submit">${icon('check', 14)} Save configuration</button></div>
+    </form>
+    <div class="free-cta">
+      <div class="free-cta-content">
+        <strong>Don't have an API?</strong>
+        <span>No problem — Git-Up has a free AI option.</span>
+        <span class="free-cta-arrow">Grab it and test it →</span>
+      </div>
+      <button class="secondary-button free-cta-button" data-action="use-free-ai">${icon('spark', 14)} Use Git-Up Free AI</button>
+    </div>
+  </div>`;
+
+  const puterSection = `<div class="provider-panel ${isPuter ? '' : 'hidden'}" id="puter-panel">
+    <div class="puter-card">
+      <div class="puter-card-head">
+        <div class="puter-icon">${icon('spark', 20)}</div>
+        <div>
+          <h3>Git-Up Free AI</h3>
+          <p>Use AI without configuring your own API key. Powered by Puter.</p>
+        </div>
+      </div>
+      ${puterConnected ? `
+        <div class="puter-connected">
+          <div class="puter-status success">${icon('check', 16)}<span>Free AI connected</span></div>
+          <p class="puter-hint">AI requests will use your connected Puter account.</p>
+          ${state.puter.testResult ? `<div class="settings-status good">${esc(state.puter.testResult)}</div>` : ''}
+          ${state.puter.error ? `<div class="settings-status bad">${esc(state.puter.error)}</div>` : ''}
+          <div class="puter-actions">
+            <button class="secondary-button" data-action="test-puter" ${puterTesting ? 'disabled' : ''}>${puterTesting ? `${icon('refresh', 14, 'spinner')} Testing Free AI...` : `${icon('check', 14)} Test AI`}</button>
+            <button class="secondary-button danger" data-action="disconnect-puter" ${puterConnecting ? 'disabled' : ''}>${icon('close', 14)} Disconnect</button>
+          </div>
+          <div class="puter-foot">
+            <span class="field-hint">Powered by Puter — user-pays model, no API key required from Git-Up.</span>
+          </div>
+        </div>
+      ` : `
+        <div class="puter-disconnected">
+          <div class="puter-status">${icon('info', 16)}<span>No API key? No problem — Git-Up has a free AI option.</span></div>
+          ${state.puter.error ? `<div class="settings-status bad">${esc(state.puter.error)}</div>` : ''}
+          <button class="install-button puter-connect" data-action="connect-puter" ${puterConnecting ? 'disabled' : ''}>${puterConnecting ? `${icon('refresh', 14, 'spinner')} Connecting...` : `${icon('spark', 14)} Connect Free AI`}</button>
+          <div class="puter-foot">
+            <span class="field-hint">Powered by Puter</span>
+            <span class="field-hint">Clicking Connect will open Puter authentication. Your usage is handled through your Puter account.</span>
+          </div>
+        </div>
+      `}
+    </div>
+    <div class="free-cta compact">
+      <span>Already have your own API? Use Custom API instead.</span>
+      <button class="link-button" data-action="select-custom">Switch to Custom API</button>
+    </div>
+  </div>`;
+
+  return `<div class="modal-layer" data-action="close-on-backdrop"><section class="modal provider-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div class="modal-head"><div><h2 id="settings-title">AI provider</h2><p>Choose how Git-Up powers its AI features. Switch anytime — your existing configuration stays saved.</p></div><button class="icon-button" data-action="close-modal" aria-label="Close settings">${icon('close', 18)}</button></div><div class="modal-body provider-modal-body">${providerSelector}${customSection}${puterSection}</div></section></div>`;
 }
 function installModal() {
   return `<div class="modal-layer" data-action="close-on-backdrop"><section class="modal script-modal" role="dialog" aria-modal="true" aria-labelledby="install-title"><div class="modal-head"><div><h2 id="install-title">Your install script</h2><p>Review these commands, then run them in your own terminal. Nothing runs automatically.</p></div><button class="icon-button" data-action="close-modal" aria-label="Close install script">${icon('close', 18)}</button></div><div class="modal-body" aria-live="polite"><p class="script-copy-note">This is the same order as your checklist. If the repository requires secrets, fill those in locally before running the script.</p><div class="script-block"><button class="copy-mini script-copy" data-copy="${esc(installScript())}" aria-label="Copy install script" title="Copy install script">${icon('copy', 13)}<span>Copy</span></button>${esc(installScript())}</div><div class="modal-foot"><button class="secondary-button" data-action="close-modal">Close</button><button class="install-button" data-copy="${esc(installScript())}">${icon('copy', 14)} Copy script</button></div></div></section></div>`;
@@ -1511,21 +1716,39 @@ async function submitRecovery(event) {
   state.failure = { ...state.failure, errorText: textarea?.value || '', note: noteInput?.value || '', saving: true, error: '' };
   render();
   try {
-    const body = {
-      repoUrl: state.repoUrl,
-      failedStepId: failedStep?.id || '',
-      errorText,
-      expertise: state.expertise,
-      revision: currentRevision(),
-      completedSteps: steps.slice(0, Math.max(0, index)),
-      remainingSteps: steps.slice(Math.max(0, index)),
-      guide: { requirements: state.guide?.requirements || [], steps: state.guide?.steps || [], failureScan: state.guide?.failureScan },
-      config: hasAiConfig() ? { ...state.settings } : null,
-    };
-    const response = await fetch('/api/recover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) throw new Error(payload.error || 'The path could not be rebuilt.');
-    const recovery = payload.recovery;
+    let recovery = null;
+    if (isPuterActive() && state.puter.connected) {
+      try {
+        recovery = await puterProvider.generateRecovery({
+          failedStepId: failedStep?.id || '',
+          errorText,
+          expertise: state.expertise,
+          completedSteps: steps.slice(0, Math.max(0, index)),
+          remainingSteps: steps.slice(Math.max(0, index)),
+          guide: { requirements: state.guide?.requirements || [], steps: state.guide?.steps || [], failureScan: state.guide?.failureScan },
+          repoUrl: state.repoUrl,
+        });
+      } catch (puterErr) {
+        throw new Error(puterErr.message || 'Free AI recovery failed. Please try again.');
+      }
+    } else {
+      const body = {
+        repoUrl: state.repoUrl,
+        failedStepId: failedStep?.id || '',
+        errorText,
+        expertise: state.expertise,
+        revision: currentRevision(),
+        completedSteps: steps.slice(0, Math.max(0, index)),
+        remainingSteps: steps.slice(Math.max(0, index)),
+        guide: { requirements: state.guide?.requirements || [], steps: state.guide?.steps || [], failureScan: state.guide?.failureScan },
+        config: (hasCustomConfig() && isCustomActive()) ? { ...state.settings } : null,
+      };
+      const response = await fetch('/api/recover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'The path could not be rebuilt.');
+      recovery = payload.recovery;
+    }
+    if (!recovery) throw new Error('Recovery generation returned empty.');
     if (!state.guide.originalSteps) state.guide.originalSteps = state.guide.steps.map((entry) => ({ ...entry }));
     const previous = state.guide.steps;
     const revised = applyRevision(previous, recovery, failedStep?.id);
@@ -1812,6 +2035,11 @@ function resetOreoForRepo() {
   ensureOreoWelcome();
 }
 
+function buildAnalyzeBody(useAi) {
+  const config = useAi && hasCustomConfig() && isCustomActive() ? { ...state.settings } : null;
+  return JSON.stringify({ repoUrl: state.repoUrl, expertise: state.expertise, config });
+}
+
 async function analyze() {
   const input = document.querySelector('#repo-input');
   state.repoUrl = input?.value.trim() || state.repoUrl.trim();
@@ -1850,8 +2078,70 @@ async function analyze() {
   };
 
   try {
-    const config = hasAiConfig() ? { ...state.settings } : null;
-    const body = JSON.stringify({ repoUrl: state.repoUrl, expertise: state.expertise, config });
+    const useCustomAi = isCustomActive() && hasCustomConfig();
+    const usePuterAi = isPuterActive() && state.puter.connected;
+
+    if (usePuterAi) {
+      // For Puter provider: get base guide without AI, then enhance via Puter if possible
+      // First try to get repo context for Puter
+      let baseGuide = null;
+      try {
+        baseGuide = await analyzeWithStream(buildAnalyzeBody(false));
+      } catch {
+        baseGuide = await analyzeWithPoll(buildAnalyzeBody(false));
+      }
+      if (!baseGuide) throw new Error('The repository could not be analyzed.');
+
+      // Try to enhance with Puter AI - but don't fail if Puter unavailable
+      try {
+        state.progress = { phase: 'ai', label: 'Enhancing with Free AI...', percent: 60, error: '' };
+        render();
+        const context = await fetch('/api/puter-context', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ repoUrl: state.repoUrl }),
+        }).then(r => r.json()).then(p => p.ok ? p.context : null).catch(() => null);
+
+        if (context) {
+          try {
+            const aiGuide = await puterProvider.generateGuide(context, state.expertise);
+            if (aiGuide) {
+              // Merge AI guide into base guide similar to server's normaliseGuide but simplified
+              const merged = {
+                ...baseGuide,
+                ...aiGuide,
+                source: 'puter',
+                repository: baseGuide.repository,
+                files: baseGuide.files,
+                fileTree: baseGuide.fileTree,
+                health: baseGuide.health,
+                failureScan: baseGuide.failureScan,
+                pathGraph: baseGuide.pathGraph,
+                contract: baseGuide.contract,
+                verdict: baseGuide.verdict,
+              };
+              // Preserve steps if AI didn't provide valid ones
+              if (!Array.isArray(aiGuide.steps) || !aiGuide.steps.length) {
+                merged.steps = baseGuide.steps;
+                merged.explanations = baseGuide.explanations;
+              }
+              finish(merged);
+              showToast('Analyzed with Free AI (Puter).');
+              return;
+            }
+          } catch (puterError) {
+            console.warn('Puter guide generation failed, falling back to local scan:', puterError);
+            // Fall through to base guide
+          }
+        }
+      } catch {}
+      finish(baseGuide);
+      showToast('Free AI enhancement unavailable, showing local scan.', 'error');
+      return;
+    }
+
+    // Custom API path (existing logic)
+    const body = buildAnalyzeBody(useCustomAi);
 
     let guide = null;
     try {
@@ -1904,10 +2194,11 @@ async function analyzeWithStream(body) {
 }
 
 async function analyzeWithPoll(body) {
+  const aiActive = (isCustomActive() && hasCustomConfig()) || (isPuterActive() && state.puter.connected);
   const fallbackPhases = [
     { phase: 'repository', label: 'Reading repository metadata…', percent: 10 },
     { phase: 'files', label: 'Scanning setup files…', percent: 25 },
-    { phase: 'ai', label: hasAiConfig() ? 'Reviewing with AI…' : 'Building local guide…', percent: 45 },
+    { phase: 'ai', label: aiActive ? 'Reviewing with AI…' : 'Building local guide…', percent: 45 },
     { phase: 'failures', label: 'Checking failure history…', percent: 55 },
     { phase: 'health', label: 'Computing health score…', percent: 65 },
     { phase: 'path', label: 'Composing install path…', percent: 78 },
@@ -1961,8 +2252,106 @@ function saveSettings(event) {
   state.settings = values;
   sessionStorage.setItem('git-up-api-key', values.apiKey);
   localStorage.setItem('git-up-settings', JSON.stringify({ baseUrl: values.baseUrl, endpoint: values.endpoint, model: values.model, modelOptions: state.modelOptions }));
+  // Ensure we stay on Custom provider when saving custom config, but don't clear puter state
+  state.aiProvider = AIProvider.CUSTOM;
+  saveProviderStateToStorage();
   closeModal();
-  showToast(hasAiConfig() ? 'AI provider connected for this session.' : 'Provider configuration saved. Local scan remains available.');
+  showToast(hasCustomConfig() ? 'Custom API connected for this session.' : 'Provider configuration saved. Local scan remains available.');
+}
+
+// --- Provider switching helpers ---
+function switchProvider(provider) {
+  if (provider !== AIProvider.CUSTOM && provider !== AIProvider.PUTER) return;
+  state.aiProvider = provider;
+  state.puter.error = '';
+  saveProviderStateToStorage();
+  render();
+}
+
+async function connectPuter() {
+  if (state.puter.connecting) return;
+  state.puter.connecting = true;
+  state.puter.error = '';
+  render();
+  try {
+    await ensurePuter();
+    const puter = getPuter();
+    if (!puter?.auth) throw new Error('Puter SDK not available. Check your connection.');
+    // This requires user gesture - we are in click handler
+    const result = await puter.auth.signIn();
+    // signIn may return user or undefined; check isSignedIn
+    const signedIn = puter.auth.isSignedIn();
+    if (!signedIn) throw new Error('Puter sign-in was cancelled or failed.');
+    try {
+      state.puter.user = await puter.auth.getUser();
+    } catch {}
+    state.puter.connected = true;
+    state.aiProvider = AIProvider.PUTER;
+    state.puter.error = '';
+    saveProviderStateToStorage();
+    render();
+    showToast('Free AI connected via Puter.');
+  } catch (err) {
+    state.puter.error = err.message || 'Could not connect Free AI.';
+    state.puter.connected = false;
+    render();
+  } finally {
+    state.puter.connecting = false;
+    render();
+  }
+}
+
+async function disconnectPuter() {
+  try {
+    await ensurePuter();
+    const puter = getPuter();
+    if (puter?.auth?.signOut) {
+      try { await puter.auth.signOut(); } catch {}
+    }
+  } catch {}
+  state.puter.connected = false;
+  state.puter.user = null;
+  state.puter.testResult = '';
+  state.puter.error = '';
+  // If currently on puter, switch back to custom but keep custom config intact
+  if (state.aiProvider === AIProvider.PUTER) {
+    state.aiProvider = AIProvider.CUSTOM;
+  }
+  saveProviderStateToStorage();
+  render();
+  showToast('Free AI disconnected. Switched to Custom API / Local scan.');
+}
+
+async function testPuterConnection() {
+  if (state.puter.testing) return;
+  state.puter.testing = true;
+  state.puter.error = '';
+  state.puter.testResult = '';
+  render();
+  try {
+    await ensurePuter();
+    const result = await puterProvider.testConnection();
+    if (!result.ok) throw new Error(result.error || 'Test failed');
+    state.puter.testResult = result.message || 'Free AI is responding.';
+    state.puter.error = '';
+    render();
+    showToast(state.puter.testResult);
+  } catch (err) {
+    state.puter.error = err.message || 'Free AI test failed.';
+    state.puter.testResult = '';
+    render();
+    showToast(state.puter.error, 'error');
+  } finally {
+    state.puter.testing = false;
+    render();
+  }
+}
+
+function useFreeAiFromCustom() {
+  // CTA from custom panel: switch to Free AI panel without losing custom config
+  state.aiProvider = AIProvider.PUTER;
+  saveProviderStateToStorage();
+  render();
 }
 async function copyText(text) {
   try { await navigator.clipboard.writeText(text); showToast('Copied to clipboard.'); }
@@ -2003,6 +2392,13 @@ function bindEvents() {
   document.querySelectorAll('[data-action="install"]').forEach((el) => el.addEventListener('click', () => { state.lastFocusId = 'install'; state.modal = 'install'; render(); }));
   document.querySelectorAll('[data-action="toggle-key"]').forEach((el) => el.addEventListener('click', () => { state.secretVisible = !state.secretVisible; render(); }));
   document.querySelectorAll('[data-action="fetch-models"]').forEach((el) => el.addEventListener('click', fetchModels));
+  // Provider selection layer
+  document.querySelectorAll('[data-action="select-custom"]').forEach((el) => el.addEventListener('click', () => switchProvider(AIProvider.CUSTOM)));
+  document.querySelectorAll('[data-action="select-puter"]').forEach((el) => el.addEventListener('click', () => switchProvider(AIProvider.PUTER)));
+  document.querySelectorAll('[data-action="use-free-ai"]').forEach((el) => el.addEventListener('click', useFreeAiFromCustom));
+  document.querySelectorAll('[data-action="connect-puter"]').forEach((el) => el.addEventListener('click', connectPuter));
+  document.querySelectorAll('[data-action="disconnect-puter"]').forEach((el) => el.addEventListener('click', disconnectPuter));
+  document.querySelectorAll('[data-action="test-puter"]').forEach((el) => el.addEventListener('click', testPuterConnection));
   document.querySelectorAll('[data-example]').forEach((el) => el.addEventListener('click', () => { state.repoUrl = el.dataset.example; render(); analyze(); }));
   document.querySelectorAll('[data-history-id]').forEach((el) => el.addEventListener('click', () => restoreHistory(el.dataset.historyId)));
   // Feature 2: per-repo action menu
@@ -2201,6 +2597,7 @@ resumeActiveSession();
 loadOreoPrefs();
 
 render();
+checkPuterAuthOnStartup();
 
 // Named exports exist only so tests/render.test.mjs can drive the real client
 // module in Node. The browser loads this file as a module either way.

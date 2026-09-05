@@ -1090,6 +1090,28 @@ async function analyzeStream(req, res, body) {
   }
 }
 
+async function analyzePuterContext(body) {
+  if (!body?.repoUrl) throw new Error('A repository URL is required.');
+  const { repo, metadata, files } = await getRepoContext(body.repoUrl);
+  // Return limited context for Puter provider - includes file contents truncated
+  const limitedFiles = files.slice(0, 24).map(f => ({
+    path: f.path,
+    content: compactText(f.content, 5000),
+  }));
+  return {
+    repo,
+    metadata: {
+      name: metadata.name,
+      description: metadata.description,
+      language: metadata.language,
+      default_branch: metadata.default_branch,
+      topics: metadata.topics,
+      stargazers_count: metadata.stargazers_count,
+    },
+    files: limitedFiles,
+  };
+}
+
 async function handleApi(req, res, pathname) {
   try {
     const body = await readBody(req);
@@ -1100,7 +1122,8 @@ async function handleApi(req, res, pathname) {
     if (req.method === 'POST' && pathname === '/api/insight') return sendJson(res, 200, { ok: true, insight: await analyzeInsight(body) });
     if (req.method === 'POST' && pathname === '/api/models') return sendJson(res, 200, { ok: true, models: await fetchModels(body) });
     if (req.method === 'POST' && pathname === '/api/recover') return sendJson(res, 200, { ok: true, recovery: await analyzeRecovery(body) });
-    if (req.method === 'GET' && pathname === '/api/health') return sendJson(res, 200, { ok: true, service: 'git-up', version: '2.0.0', features: FEATURE_FLAGS, githubToken: Boolean(process.env.GITHUB_TOKEN) });
+    if (req.method === 'POST' && pathname === '/api/puter-context') return sendJson(res, 200, { ok: true, context: await analyzePuterContext(body) });
+    if (req.method === 'GET' && pathname === '/api/health') return sendJson(res, 200, { ok: true, service: 'git-up', version: '2.0.0', features: [...FEATURE_FLAGS, 'puter-free-ai'], githubToken: Boolean(process.env.GITHUB_TOKEN) });
     return sendJson(res, 404, { ok: false, error: 'Not found.' });
   } catch (error) {
     // The SSE stream owns its socket once headers are sent; writing JSON here

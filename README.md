@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner/banner_for_readme.png" alt="Git-Up cat robot logo with an upward mint route arrow" width="128" />
+  <img src="assets/banner/banner_for_readme.png" alt="Git-Up cat robot logo with an upward mint route arrow" width="500" />
 </p>
 
 # Git-Up

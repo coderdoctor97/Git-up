@@ -33,9 +33,7 @@ It is for developers, maintainers, reviewers, students, and curious users who ne
 
 ## Visual proof
 
-<video controls width="100%" preload="metadata" src="https://raw.githubusercontent.com/coderdoctor97/Git-up/main/assets/video_demo/git-up-demo.mp4"></video>
-
-> Can't see the player? [Watch the Git-Up demo (MP4)](https://github.com/coderdoctor97/Git-up/blob/main/assets/video_demo/git-up-demo.mp4)
+![Git-Up demo – paste a public GitHub URL and get a living install path](assets/video_demo/demo.gif)
 
 Text-only path: enter a public GitHub URL → Git-Up reads public repository evidence → the server builds a guide, health score, failure scan, path graph, and install contract → the browser renders a checklist → if a command fails, paste the redacted error and Git-Up rebuilds the remaining path.
 

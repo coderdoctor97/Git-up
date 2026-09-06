@@ -8,7 +8,7 @@
 //
 // The grid never moves. Individual squares gently BLINK: each cell breathes
 // between a near-invisible floor and its own small peak on its own slow,
-// randomized cycle (4–8s), with a rare slightly stronger pulse on a few
+// randomized cycle (3.8–7.2s), with a rare slightly stronger pulse on a few
 // cells — calm repository activity, not a marquee.
 //
 // Light mode uses a dark green (not mint) at DECREASED opacity so the header
@@ -24,11 +24,11 @@
 // DOM stub.
 
 // Square size × pitch (px). Rows are computed from the header height so the
-// field fills the whole bar (~5 rows at 70px) instead of floating as a thin
-// strip — a full contribution-graph wall behind the header content.
-const CELL = 7;
-const GAP = 5;
-const PITCH = CELL + GAP; // 12
+// field fills the whole bar (~7 rows at 72px) instead of floating as a thin
+// strip — a compact contribution-graph wall behind the header content.
+const CELL = 6;
+const GAP = 4;
+const PITCH = CELL + GAP; // 10
 const FRAME_MS = 1000 / 24; // calm 24fps is plenty for slow blinks
 
 function themeOf(doc) {
@@ -46,14 +46,14 @@ function paletteFor(theme) {
         // brand, crumb and controls stay clearly readable.
         base: [15, 157, 108],
         bright: [11, 122, 85],
-        maxAlpha: 0.22,
-        floorAlpha: 0.04,
+        maxAlpha: 0.27,
+        floorAlpha: 0.035,
       }
     : {
         base: [127, 224, 178],
         bright: [169, 242, 205],
-        maxAlpha: 0.32,
-        floorAlpha: 0.045,
+        maxAlpha: 0.38,
+        floorAlpha: 0.05,
       };
 }
 
@@ -67,14 +67,14 @@ function makeCells(count, rand = Math.random) {
   const cells = new Array(count);
   for (let i = 0; i < count; i += 1) {
     const roll = rand();
-    const peak = roll < 0.7
-      ? 0.15 + rand() * 0.2 // faint shimmer
-      : roll < 0.98
-        ? 0.35 + rand() * 0.2 // muted mid blink
-        : 0.6 + rand() * 0.15; // rare near-max pulse
+    const peak = roll < 0.6
+      ? 0.16 + rand() * 0.22 // quiet contribution
+      : roll < 0.96
+        ? 0.38 + rand() * 0.24 // readable mid blink
+        : 0.68 + rand() * 0.2; // rare high-activity cell
     cells[i] = {
       peak,
-      period: 4 + rand() * 4, // 4–8s blink cycle
+      period: 3.8 + rand() * 3.4, // 3.8–7.2s blink cycle
       phase: rand() * Math.PI * 2, // desynchronized start
     };
   }

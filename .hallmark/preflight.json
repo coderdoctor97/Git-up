@@ -1,0 +1,80 @@
+{
+  "date": "2026-09-05",
+  "project": "Git-Up",
+  "font_stack": {
+    "display": "Avenir Next / Trebuchet MS / system sans",
+    "body": "system UI sans",
+    "mono": "system monospace",
+    "source": "public/styles.css :root"
+  },
+  "palette": {
+    "system": "dark and light CSS custom properties",
+    "anchor": "Git-Up mint route color",
+    "manual_inversion": "neutral light field on dark theme; neutral dark field on light theme",
+    "source": "public/styles.css :root and [data-theme=light]"
+  },
+  "motion": {
+    "stance": "calm repository activity plus restrained product feedback",
+    "runtime": "vanilla CSS and JavaScript over existing particles.js and canvas infrastructure; no new framework",
+    "reduced_motion": true
+  },
+  "spacing": "established compact 4px/8px control rhythm with larger editorial section intervals",
+  "framework": "vanilla HTML, CSS, and ES modules",
+  "preserved": [
+    "route-workbench information architecture",
+    "Git-Up mint anchor, typography, and dark/light mode behavior",
+    "all views, components, providers, content, and interactions",
+    "main logo, Oreo mascot, and local Tabler/Iconify glyph system"
+  ],
+  "introduced": [
+    "theme-inverted field-manual entry surface",
+    "sticky right-hand context rail replacing the old left-rail silhouette",
+    "matching full-width manual analysis control band",
+    "open chapter-led analysis flow instead of rounded dashboard cards or repeated panel rules",
+    "larger readable display and analysis typography with a three-line headline at common widths",
+    "restrained radius, depth, texture, and accent footprint",
+    "explicit route-ink and manual-surface token families",
+    "continuous responsive overflow, wrapping, touch, focus, disabled-state, and accessibility gates"
+  ],
+  "polish": {
+    "command": "Impeccable polish",
+    "incumbent_identity": "preserved",
+    "responsive_contract": {
+      "wide_above_1100": "304px sticky context rail",
+      "intermediate_721_to_1100": "220px readable context rail with history, file filter/tree, and local context retained",
+      "mobile_at_or_below_720": "context rail hidden; existing bottom navigation exposed",
+      "analysis_at_or_below_1399": "repository identity and action group stack to protect names and canonical URLs"
+    },
+    "typography": [
+      "display tracking held at -0.04em craft floor",
+      "hero headline reflowed to three lines at 375px and common desktop widths",
+      "hero body copy constrained to 46ch; chapter reading text raised to 13px or more"
+    ],
+    "state_finish": [
+      "recoverable errors follow the repository control before reader-depth choices",
+      "Oreo yields to modal layering and clears the mobile error region",
+      "disabled controls use cursor, opacity, and saturation channels"
+    ],
+    "detector": "ran exactly once; eight findings remediated and two square top-rule exceptions documented"
+  },
+  "dynamic_refinement": {
+    "mode": "preserve",
+    "dials": {
+      "design_variance": 6,
+      "motion_intensity": 5,
+      "visual_density": 5
+    },
+    "reference_mapping": {
+      "Animate.css": "scoped duration and delay with short one-shot entrances",
+      "Hover.css": "1px primary-action lift and transform-only route underline",
+      "Vanilla Framework": "type measure, spacing, and component-scoped discipline",
+      "NES.css": "crisp square activity cells and selective hard-edged accents",
+      "particles.js": "slow density-scaled square workspace activity",
+      "Lenis": "native smooth scrolling and anchor offset without scroll hijacking",
+      "ScrollReveal": "existing once-only IntersectionObserver with stagger and seal"
+    },
+    "divider_strategy": "major chapters separated by whitespace; tonal grouping reserved for supporting evidence; functional form and command boundaries retained",
+    "performance": "workspace canvas fixed to the visible viewport and bounded around the 304px/220px rail",
+    "functional_change": "none"
+  }
+}

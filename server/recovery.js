@@ -330,6 +330,22 @@ function aiPrompt({ repo, metadata, files, failedStep, errorText, remainingSteps
   ].join('\n');
 }
 
+export function buildRecoveryAiRequest(input) {
+  return {
+    messages: [{ role: 'user', content: aiPrompt(input) }],
+    options: { temperature: 0.15, max_tokens: 3200 },
+  };
+}
+
+function parseAiPayload(value) {
+  if (value && typeof value === 'object') return value;
+  const cleaned = String(value || '').slice(0, 400_000).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  try { return JSON.parse(cleaned); } catch { /* fall through */ }
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  try { return JSON.parse(match[0]); } catch { return null; }
+}
+
 async function aiCall(config, prompt) {
   const base = String(config.baseUrl).trim().replace(/\/+$/, '');
   const endpointValue = String(config.endpoint || '/chat/completions').trim() || '/chat/completions';
@@ -356,30 +372,33 @@ async function aiCall(config, prompt) {
   if (!response.ok) throw new Error(`AI provider returned ${response.status}: ${(await response.text()).slice(0, 160)}. Check the base URL, endpoint, model, and key.`);
   const payload = await response.json();
   const text = payload?.choices?.[0]?.message?.content || payload?.choices?.[0]?.text || payload?.output_text || payload?.content || '';
-  const cleaned = String(text).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  try { return JSON.parse(cleaned); } catch { /* fall through */ }
-  const match = cleaned.match(/\{[\s\S]*\}/);
-  if (!match) return null;
-  try { return JSON.parse(match[0]); } catch { return null; }
+  return parseAiPayload(text);
 }
 
 /**
- * Recovery entry point. AI-first when configured, always landing on the local
- * rules engine so the button never dead-ends without a key.
+ * Recovery entry point. The existing Custom API path keeps its local fallback.
+ * Browser-provider failures stay explicit so Git-Up never silently changes a
+ * user's selected provider.
  */
-export async function recoverPath({ config, repo, metadata, files, failedStep, errorText, remainingSteps, completedSteps, requirements, expertise, failureScan }) {
+export async function recoverPath({ config, providerResult, repo, metadata, files, failedStep, errorText, remainingSteps, completedSteps, requirements, expertise, failureScan }) {
   const local = heuristicRecover({ failedStep, errorText, remainingSteps, completedSteps });
-  if (!config?.apiKey || !config?.model || !config?.baseUrl) return local;
+  const browserProvider = providerResult !== undefined;
+  if (!browserProvider && (!config?.apiKey || !config?.model || !config?.baseUrl)) return local;
   let aiPayload = null;
   let aiError = '';
-  try {
-    aiPayload = await aiCall(config, aiPrompt({ repo, metadata, files, failedStep, errorText, remainingSteps, completedSteps, requirements, expertise, failureScan }));
-  } catch (error) {
-    aiError = error.message || 'The AI provider could not answer.';
-  }
-  if (!aiPayload?.correctedSteps?.length) {
-    if (aiError) local.note = `AI recovery was unavailable (${aiError.slice(0, 140)}). Applying the local fix instead.`;
-    return local;
+  if (browserProvider) {
+    aiPayload = parseAiPayload(providerResult);
+    if (!aiPayload?.correctedSteps?.length) throw new Error('Free AI returned an invalid recovery response. Please retry.');
+  } else {
+    try {
+      aiPayload = await aiCall(config, aiPrompt({ repo, metadata, files, failedStep, errorText, remainingSteps, completedSteps, requirements, expertise, failureScan }));
+    } catch (error) {
+      aiError = error.message || 'The AI provider could not answer.';
+    }
+    if (!aiPayload?.correctedSteps?.length) {
+      if (aiError) local.note = `AI recovery was unavailable (${aiError.slice(0, 140)}). Applying the local fix instead.`;
+      return local;
+    }
   }
   const remainingIds = new Set(remainingSteps.map((entry) => String(entry.id)));
   const corrected = aiPayload.correctedSteps.map((entry, index) => ({

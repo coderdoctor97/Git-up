@@ -33,7 +33,7 @@ import { scanInstallFailures, patchNotesFor } from './server/failures.js';
 import { computeHealth, fetchCiSignal, healthVerdict } from './server/health.js';
 import { buildPathGraph, patchStepsForFailures } from './server/pathgraph.js';
 import { buildContract } from './server/contract.js';
-import { recoverPath } from './server/recovery.js';
+import { buildRecoveryAiRequest, recoverPath } from './server/recovery.js';
 import { buildOreoMessages } from './server/oreo-system.js';
 import { decorateSteps, composeSteps, EXPERTISE_LEVELS, expertiseFor, tuneGuide } from './public/path-engine.js';
 
@@ -581,10 +581,9 @@ function heuristicInsight(repo, metadata, files, mode) {
   };
 }
 
-async function callAiInsight(config, repo, metadata, files, mode, question, session) {
-  if (!config || !config.baseUrl || !config.apiKey || !config.model) return null;
+async function callAiInsight(config, repo, metadata, files, mode, question, session, prepareOnly = false) {
+  if (!prepareOnly && (!config || !config.baseUrl || !config.apiKey || !config.model)) return null;
   const meta = INSIGHT_META[mode] || INSIGHT_META.recommendations;
-  const endpointUrl = buildProviderUrl(config.baseUrl, config.endpoint || '/chat/completions');
   const modeBrief = mode === 'features'
     ? 'Propose 3–5 practical, creative feature extensions for a NEW fork. Each bullet: bold title, one plain sentence of what it does, one of who it delights. No jargon.'
     : mode === 'bugs'
@@ -595,6 +594,9 @@ async function callAiInsight(config, repo, metadata, files, mode, question, sess
   // message on this chat path alone. Guide generation (callAi) and recovery
   // never see it.
   const messages = buildOreoMessages(prompt, session);
+  const request = { messages, options: { temperature: 0.35, max_tokens: 2200 } };
+  if (prepareOnly) return request;
+  const endpointUrl = buildProviderUrl(config.baseUrl, config.endpoint || '/chat/completions');
   let response;
   try {
     response = await fetchWithTimeout(endpointUrl, {
@@ -609,7 +611,11 @@ async function callAiInsight(config, repo, metadata, files, mode, question, sess
     const detail = await response.text();
     throw new Error(`AI provider returned ${response.status}${detail ? `: ${detail.slice(0, 180)}` : '. Check the base URL, endpoint, model, and key.'}`);
   }
-  const parsed = parseAiJson(extractAiText(await response.json()));
+  return insightFromProviderText(extractAiText(await response.json()), mode, meta);
+}
+
+function insightFromProviderText(text, mode, meta = INSIGHT_META[mode] || INSIGHT_META.recommendations) {
+  const parsed = parseAiJson(String(text || '').slice(0, 300_000));
   if (!parsed || !Array.isArray(parsed.bullets)) throw new Error('The AI insight response was not valid JSON. Try again.');
   return {
     mode,
@@ -721,16 +727,18 @@ function toProviderError(error, what = 'AI provider') {
   return error instanceof Error ? error : new Error(String(message || `${what} request failed.`));
 }
 
-async function callAi(config, repo, metadata, files) {
-  if (!config || !config.baseUrl || !config.apiKey || !config.model) return null;
-  const endpointUrl = buildProviderUrl(config.baseUrl, config.endpoint || '/chat/completions');
+async function callAi(config, repo, metadata, files, prepareOnly = false) {
+  if (!prepareOnly && (!config || !config.baseUrl || !config.apiKey || !config.model)) return null;
   const prompt = `You are Git-Up, a meticulous senior developer advocate who can also explain anything to a 12-year-old. Analyze this public GitHub repository and return only valid JSON. Do not invent commands or requirements. Use the repository files as your source of truth. If uncertain, say so in notes.\n\nJSON schema:\n{\"summary\":\"string\",\"confidence\":\"high|medium|low\",\"dependencies\":[{\"name\":\"string\",\"version\":\"string|null\",\"kind\":\"runtime|dev|tooling|service\"}],\"requirements\":[\"string\"],\"environment\":[\"ENV_KEY\"],\"steps\":[{\"id\":\"stable-id\",\"title\":\"action title\",\"command\":\"shell commands or empty string\",\"detail\":\"what to do\"}],\"explanations\":[{\"stepId\":\"matching step id\",\"title\":\"short title\",\"body\":\"why this matters\"}],\"notes\":[\"caveat\"],\"anticipatedFailures\":[{\"signature\":\"short label of the failure\",\"stepId\":\"which step id it breaks\",\"symptom\":\"error text people actually paste\",\"fix\":\"the command or action that avoids it\"}],\"plainOverview\":{\"analogy\":\"one vivid real-world analogy sentence\",\"problem\":\"what everyday problem this solves, zero jargon\",\"audience\":\"who benefits, in everyday roles\",\"howItWorks\":[\"step 1 in plain words\",\"step 2\",\"step 3\"]},\"followUps\":[\"contextual follow-up question 1\",\"question 2\",\"question 3\"]}\n\nInstall-path rules (never break these):\n- steps[].id must be chosen from this vocabulary when the action matches it: clone, toolchain, services, docker, dependencies, database, env, build, dev, run, verify. Reuse the same id for the same action across revisions so progress is not lost.\n- steps[].order is an integer 0-90 placing the step in the sequence; steps with the same action must keep the same order slot.\n- anticipatedFailures: the 2-4 ways installers most often break for THIS repository, each pointing at the step id it breaks. Base them on the README, lockfiles, and Dockerfile — not on generic advice. Return an empty array if nothing specific is known.\n\nSTRICT plainOverview rules (never break these):\n- ZERO technical jargon. Never use: API, endpoints, serialization, dependencies, CI/CD, manifest, lockfile, toolchain, middleware, SDK, CLI, interface, schema, runtime, framework, repository (say \"project\" instead).\n- Write at a 12-year-old reading level. Use real-world analogies (kitchen, recipe box, library, workshop, garden, lunchbox, toolbox).\n- Cover exactly: what everyday problem it solves, who benefits (parents, teachers, shop owners, students…), how it works from a visitor's point of view in 3 short steps.\n- followUps: 2–3 short clickable questions specific to THIS project (e.g. ideas to build next, what to be careful about). Never generic filler.\n\nRepository: ${repo.canonicalUrl}\nMetadata: ${JSON.stringify({ name: metadata.name, description: metadata.description, language: metadata.language, default_branch: metadata.default_branch, topics: metadata.topics })}\n\nFiles:\n${files.map((file) => `--- ${file.path}\n${compactText(file.content, 5000)}`).join('\n')}`;
+  const request = { messages: [{ role: 'user', content: prompt }], options: { temperature: 0.1, max_tokens: 6000 } };
+  if (prepareOnly) return request;
+  const endpointUrl = buildProviderUrl(config.baseUrl, config.endpoint || '/chat/completions');
   let response;
   try {
     response = await fetchWithTimeout(endpointUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-      body: JSON.stringify({ model: config.model, temperature: 0.1, messages: [{ role: 'user', content: prompt }] }),
+      body: JSON.stringify({ model: config.model, temperature: 0.1, messages: request.messages }),
     }, AI_CHAT_TIMEOUT_MS);
   } catch (error) {
     throw toProviderError(error);
@@ -740,7 +748,11 @@ async function callAi(config, repo, metadata, files) {
     throw new Error(`AI provider returned ${response.status}${detail ? `: ${detail.slice(0, 180)}` : '. Check the base URL, endpoint, model, and key.'}`);
   }
   const payload = await response.json();
-  const parsed = parseAiJson(extractAiText(payload));
+  return guideFromProviderText(extractAiText(payload), repo, metadata, files);
+}
+
+function guideFromProviderText(text, repo, metadata, files) {
+  const parsed = parseAiJson(String(text || '').slice(0, 750_000));
   if (!parsed) throw new Error('The AI response was not valid installation-guide JSON. Try another model.');
   return { ...parsed, source: 'ai', analyzedAt: new Date().toISOString(), repository: { ...repo, name: metadata.name, description: metadata.description, stars: metadata.stargazers_count, language: metadata.language, defaultBranch: metadata.default_branch }, files: files.map((file) => file.path) };
 }
@@ -774,12 +786,14 @@ async function analyzeRepository(body) {
   const { repo, metadata, files, fullTreePaths, rawBlocked } = await getRepoContext(body.repoUrl);
   let scanNotice = '';
   if ((files.length <= 2) && fullTreePaths.length <= 2) scanNotice = '';
-  // AI upgrades the guide but must never break it: any provider failure
-  // (bad key, wrong endpoint, rate limit, offline) falls back to the local
-  // scan with a visible warning instead of failing the whole analysis.
+  // Preserve the existing Custom API fallback: bad keys, endpoints, limits, or
+  // offline providers still yield a local scan with a visible warning. Browser
+  // provider results are validated explicitly so Free AI never silently changes modes.
   let aiGuide = null;
   let aiWarning = '';
-  if (body.config) {
+  if (body.provider === 'pollinations') {
+    aiGuide = guideFromProviderText(body.providerResult, repo, metadata, files);
+  } else if (body.config) {
     try {
       aiGuide = await callAi(body.config, repo, metadata, files);
     } catch (error) {
@@ -899,37 +913,44 @@ function sanitiseStepList(value) {
  * Feature 1 endpoint: a step failed, the user pasted what happened, and the path
  * from that step onward is rebuilt. Completed steps are never returned.
  */
-async function analyzeRecovery(body) {
+async function recoveryInput(body) {
   const failedStepId = String(body?.failedStepId || '').slice(0, 60);
   const errorText = String(body?.errorText || '').slice(0, 12_000);
   if (!body?.repoUrl) throw new Error('A repository URL is required to recover a failed step.');
   const { repo, metadata, files } = await getRepoContext(body.repoUrl, { refresh: Boolean(body.refresh) });
   const guide = body.guide && typeof body.guide === 'object' ? body.guide : {};
-  const completed = sanitiseStepList(body.completedSteps);
+  const completedSteps = sanitiseStepList(body.completedSteps);
   const remaining = sanitiseStepList(body.remainingSteps);
-  const failedStep = completed.find((entry) => entry.id === failedStepId)
+  const failedStep = completedSteps.find((entry) => entry.id === failedStepId)
     || remaining.find((entry) => entry.id === failedStepId)
     || sanitiseStepList(guide.steps).find((entry) => entry.id === failedStepId)
     || { id: failedStepId || 'failed-step', title: 'The failed step', command: '', detail: '' };
-  const expertise = EXPERTISE_LEVELS.some((level) => level.id === body?.expertise) ? body.expertise : 'some';
-  const recovery = await recoverPath({
-    config: body.config?.apiKey && body.config?.model ? body.config : null,
+  return {
     repo,
     metadata,
     files,
     failedStep,
     errorText,
     remainingSteps: remaining.length ? remaining : [failedStep],
-    completedSteps: completed,
+    completedSteps,
     requirements: Array.isArray(guide.requirements) ? guide.requirements.slice(0, 8) : [],
-    expertise,
+    expertise: EXPERTISE_LEVELS.some((level) => level.id === body?.expertise) ? body.expertise : 'some',
     failureScan: guide.failureScan,
+  };
+}
+
+async function analyzeRecovery(body) {
+  const input = await recoveryInput(body);
+  const recovery = await recoverPath({
+    ...input,
+    config: body.config?.apiKey && body.config?.model ? body.config : null,
+    providerResult: body.provider === 'pollinations' ? body.providerResult : undefined,
   });
   return {
     ...recovery,
-    failedStep,
+    failedStep: input.failedStep,
     revision: Number(body?.revision || 1) + 1,
-    repository: { canonicalUrl: repo.canonicalUrl, name: metadata?.name || repo.repo },
+    repository: { canonicalUrl: input.repo.canonicalUrl, name: input.metadata?.name || input.repo.repo },
     generatedAt: new Date().toISOString(),
   };
 }
@@ -940,6 +961,12 @@ async function analyzeInsight(body) {
   if (!body.repoUrl) throw new Error('A repository URL is required for insights.');
   const { repo, metadata, files } = await getRepoContext(body.repoUrl);
   const effectiveMode = mode === 'custom' ? (body.baseMode && INSIGHT_META[body.baseMode] ? body.baseMode : 'recommendations') : mode;
+  if (body.provider === 'pollinations') {
+    const ai = insightFromProviderText(body.providerResult, effectiveMode);
+    if (mode === 'custom' && question) ai.title = `Answer: ${question.slice(0, 80)}`;
+    ai.mode = mode;
+    return ai;
+  }
   if (body.config?.apiKey && body.config?.model) {
     try {
       const ai = await callAiInsight(body.config, repo, metadata, files, effectiveMode, question || undefined, body.session);
@@ -964,6 +991,28 @@ async function analyzeInsight(body) {
     fallback.intro = `Here is a down-to-earth take on “${question}” for this project, based on the files Git-Up could see. Connect an AI provider in the top-right settings for a deeper file-aware answer.`;
   }
   return fallback;
+}
+
+async function prepareAiOperation(body) {
+  const operation = String(body?.operation || '');
+  const payload = body?.payload && typeof body.payload === 'object' ? body.payload : {};
+  if (operation === 'analyze') {
+    if (!payload.repoUrl) throw new Error('A repository URL is required for AI analysis.');
+    const { repo, metadata, files } = await getRepoContext(payload.repoUrl);
+    return callAi(null, repo, metadata, files, true);
+  }
+  if (operation === 'insight') {
+    if (!payload.repoUrl) throw new Error('A repository URL is required for AI insights.');
+    const mode = ['features', 'bugs', 'recommendations', 'custom'].includes(payload.mode) ? payload.mode : 'recommendations';
+    const effectiveMode = mode === 'custom' && payload.baseMode && INSIGHT_META[payload.baseMode] ? payload.baseMode : (mode === 'custom' ? 'recommendations' : mode);
+    const question = typeof payload.question === 'string' ? payload.question.slice(0, 2000) : '';
+    const { repo, metadata, files } = await getRepoContext(payload.repoUrl);
+    return callAiInsight(null, repo, metadata, files, effectiveMode, question || undefined, payload.session, true);
+  }
+  if (operation === 'recover') {
+    return buildRecoveryAiRequest(await recoveryInput(payload));
+  }
+  throw new Error('Unsupported AI operation.');
 }
 
 function safeUpstreamUrl(base, path = '') {
@@ -1031,10 +1080,13 @@ async function analyzeStream(req, res, body) {
 
     let scanNotice = '';
     if (!((files.length <= 2) && fullTreePaths.length <= 2)) scanNotice = '';
-    // Same fallback as /api/analyze: a failing provider must not fail the stream.
+    // Custom API keeps its established local fallback. A supplied browser
+    // provider result is validated explicitly and never triggers a provider switch.
     let aiGuide = null;
     let aiWarning = '';
-    if (body.config) {
+    if (body.provider === 'pollinations') {
+      aiGuide = guideFromProviderText(body.providerResult, repo, metadata, files);
+    } else if (body.config) {
       try {
         aiGuide = await callAi(body.config, repo, metadata, files);
       } catch (error) {
@@ -1098,6 +1150,7 @@ async function handleApi(req, res, pathname) {
     // instead of escaping as an unhandled rejection that kills the server.
     if (req.method === 'POST' && pathname === '/api/analyze-stream') { await analyzeStream(req, res, body); return; }
     if (req.method === 'POST' && pathname === '/api/insight') return sendJson(res, 200, { ok: true, insight: await analyzeInsight(body) });
+    if (req.method === 'POST' && pathname === '/api/ai/prepare') return sendJson(res, 200, { ok: true, request: await prepareAiOperation(body) });
     if (req.method === 'POST' && pathname === '/api/models') return sendJson(res, 200, { ok: true, models: await fetchModels(body) });
     if (req.method === 'POST' && pathname === '/api/recover') return sendJson(res, 200, { ok: true, recovery: await analyzeRecovery(body) });
     if (req.method === 'GET' && pathname === '/api/health') return sendJson(res, 200, { ok: true, service: 'git-up', version: '2.0.0', features: FEATURE_FLAGS, githubToken: Boolean(process.env.GITHUB_TOKEN) });

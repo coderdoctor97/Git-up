@@ -1,0 +1,44 @@
+{
+  "date": "2026-09-05",
+  "engine": "Chromium 153 via Playwright 1.63.0",
+  "purpose": "Impeccable polish regression audit",
+  "checks": [
+    "empty/320",
+    "empty/375",
+    "empty/414",
+    "empty/719",
+    "empty/720",
+    "analysis/721",
+    "analysis/768",
+    "analysis/1100",
+    "analysis/1279",
+    "analysis/1280",
+    "analysis/1366",
+    "analysis/1399",
+    "analysis/1400",
+    "empty/1440",
+    "invalid/error/375",
+    "settings/focus-trap/escape",
+    "disabled/state-channels",
+    "long-name/320",
+    "long-name/768",
+    "long-name/1100"
+  ],
+  "coverage": [
+    "320\u20131440px breakpoint boundaries",
+    "220px intermediate file rail",
+    "analysis identity/action stacking through 1399px",
+    "long repository names",
+    "recoverable mobile error",
+    "modal focus entry, bidirectional Tab trap, and Escape dismissal",
+    "multi-channel disabled state",
+    "root/body overflow and clickable-label wrapping",
+    "runtime page errors"
+  ],
+  "summary": {
+    "checks": 20,
+    "passed": 20,
+    "failed": 0
+  },
+  "result": "pass"
+}

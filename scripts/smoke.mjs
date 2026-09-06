@@ -74,6 +74,32 @@ async function main() {
       throw new Error(`mascot route returned ${mascot.status} ${mascot.headers.get('content-type')}`);
     }
 
+    const iconModule = await fetch(`http://127.0.0.1:${port}/icons.js`);
+    const iconSource = await iconModule.text();
+    if (iconModule.status !== 200
+      || !String(iconModule.headers.get('content-type')).includes('javascript')
+      || !iconSource.includes("id: 'tabler:settings-ai'")
+      || !iconSource.includes('data-icon=')) {
+      throw new Error(`local Iconify module returned ${iconModule.status} ${iconModule.headers.get('content-type')}`);
+    }
+
+    const aiModule = await fetch(`http://127.0.0.1:${port}/ai/ai-service.js`);
+    if (aiModule.status !== 200 || !String(aiModule.headers.get('content-type')).includes('javascript')) {
+      throw new Error(`AI service module returned ${aiModule.status} ${aiModule.headers.get('content-type')}`);
+    }
+    const freeAiModule = await fetch(`http://127.0.0.1:${port}/ai/pollinations-provider.js`);
+    if (freeAiModule.status !== 200 || !String(freeAiModule.headers.get('content-type')).includes('javascript')) {
+      throw new Error(`Free AI provider module returned ${freeAiModule.status} ${freeAiModule.headers.get('content-type')}`);
+    }
+
+    const invalidAiPrepare = await fetch(`http://127.0.0.1:${port}/api/ai/prepare`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: 'unknown', payload: {} }),
+    });
+    const invalidPayload = await invalidAiPrepare.json();
+    if (invalidAiPrepare.status !== 400 || invalidPayload.ok !== false) {
+      throw new Error(`AI prepare validation returned ${invalidAiPrepare.status} ${JSON.stringify(invalidPayload)}`);
+    }
+
     console.log(`Smoke check passed on http://127.0.0.1:${port}`);
   } finally {
     child.kill('SIGTERM');

@@ -1,25 +1,7 @@
-// Git-Up — Magic UI ports (vanilla JS, no dependencies).
-// Techniques adapted from skills/magicui: magic-card spotlight (cursor-tracked
-// radial glow via CSS vars), number-ticker (rAF count-up on visibility), and
-// blur-fade scroll reveal (IntersectionObserver + a reveal-done seal so the
-// app's constant re-renders never flicker). No top-level DOM access: safe to
-// import in Node tests. Call the binders from bindEvents() after every render,
-// since render() replaces innerHTML.
-
-const SPOTLIGHT_SELECTOR = '.panel, .seg-option, .oreo-panel, .oreo-chip, .route-preview, .route-status';
-
-/** Track the cursor per card so magic.css can paint the glow at --mx/--my. */
-export function bindSpotlight(scope) {
-  const root = scope || (typeof document !== 'undefined' ? document : null);
-  if (!root || !root.querySelectorAll) return;
-  root.querySelectorAll(SPOTLIGHT_SELECTOR).forEach((el) => {
-    el.addEventListener('pointermove', (event) => {
-      const rect = el.getBoundingClientRect();
-      el.style.setProperty('--mx', `${event.clientX - rect.left}px`);
-      el.style.setProperty('--my', `${event.clientY - rect.top}px`);
-    });
-  });
-}
+// Git-Up supporting presentation binders (vanilla JS, no dependencies).
+// The value ticker counts once on visibility; reveal hooks use a short
+// opacity/translate entrance and a reveal-done seal so rerenders never flicker.
+// There is no top-level DOM access, keeping this module safe in Node tests.
 
 /** Count [data-ticker] elements up to data-ticker-to when scrolled into view. */
 export function bindTickers(scope) {
@@ -57,7 +39,7 @@ export function bindTickers(scope) {
 
 const SEAL_AFTER_MS = 4000;
 /**
- * Blur-fade scroll reveal for [data-reveal] and [data-reveal-stagger].
+ * Brief transform-and-opacity reveal for [data-reveal] and [data-reveal-stagger].
  *
  * Contract with magic.css:
  *   - `reveal-armed` on <html> switches the hidden pre-reveal state on, so a
@@ -84,13 +66,6 @@ export function bindReveals(scope) {
   const targets = Array.from(root.querySelectorAll('[data-reveal], [data-reveal-stagger]'));
   if (!targets.length) return;
   html.classList.add('reveal-armed');
-  // Set --reveal-from for directional/scale reveal variants.
-  targets.forEach((el) => {
-    const v = el.getAttribute('data-reveal');
-    if (v === 'left') el.style.setProperty('--reveal-from', 'rise-left');
-    else if (v === 'right') el.style.setProperty('--reveal-from', 'rise-right');
-    else if (v === 'scale') el.style.setProperty('--reveal-from', 'scale-in');
-  });
   // Later renders in the same view: keep everything visible, never re-animate.
   if (html.classList.contains('reveal-done')) return;
   const pending = new Set(targets);
@@ -121,7 +96,7 @@ export function bindReveals(scope) {
     const batch = entries.filter((entry) => entry.isIntersecting && pending.has(entry.target));
     batch.forEach((entry, index) => {
       pending.delete(entry.target);
-      entry.target.style.setProperty('--reveal-delay', `${index * 70}ms`);
+      entry.target.style.setProperty('--reveal-delay', `${index * 42}ms`);
       entry.target.classList.add('revealed');
       io.unobserve(entry.target);
     });

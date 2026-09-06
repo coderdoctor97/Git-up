@@ -1,154 +1,58 @@
-/* ===========================================================================
-   Git-Up — Magic UI ports (vanilla CSS/JS, no dependencies)
-   Techniques adapted from skills/magicui: shimmer-button, magic-card
-   (spotlight), number-ticker, dot-pattern. Loaded after styles.css so these
-   rules layer on top; nothing in styles.css is modified.
-   Every effect is theme-aware (dark + [data-theme="light"]) and disabled
-   under prefers-reduced-motion, matching the existing pattern.
-   =========================================================================== */
+/* Git-Up supporting presentation layer.
+   The product keeps its ticker, route texture, reveal hooks, signature strip,
+   command palette, workspace field, and contribution header. Motion remains
+   transform/opacity based; cursor glows, recurring sheens, and scale effects
+   are intentionally absent. */
 
-/* Smooth cursor trailing for the spotlight (unsupported browsers ignore). */
-@property --mx { syntax: '<length>'; inherits: false; initial-value: -300px; }
-@property --my { syntax: '<length>'; inherits: false; initial-value: -300px; }
-
-/* --- 1. Shimmer sweep on the primary CTAs (shimmer-button technique) --------
-   Selector-based so no template changes are needed. The sheen is a skewed
-   white gradient that sweeps across the button every few seconds. Kept on the
-   two true entry points only (analyze + new analysis); repeated panels use the
-   plain hover treatment so the effect never becomes wallpaper. */
-.analyze-button, .new-analysis {
-  position: relative;
-  overflow: hidden;
-}
-.analyze-button::after, .new-analysis::after {
-  content: '';
-  position: absolute;
-  top: -20%;
-  bottom: -20%;
-  left: -70%;
-  width: 45%;
-  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, .35), transparent);
-  transform: skewX(-20deg);
-  pointer-events: none;
-  animation: magic-sheen 6.5s ease-in-out infinite;
-}
-.analyze-button:hover::after, .new-analysis:hover::after {
-  animation-duration: 2.6s;
-}
-@keyframes magic-sheen {
-  0% { left: -70%; }
-  55%, 100% { left: 140%; }
-}
-
-/* --- 2. Card spotlight (magic-card gradient mode, vanilla port) -------------
-   A radial mint glow follows the cursor. Painted as a background-image layer
-   so it always sits below content. Position defaults off-element so nothing
-   shows until the first pointermove. */
-.panel, .seg-option, .explorer-btn, .route-preview, .route-status {
-  background-image: radial-gradient(240px circle at var(--mx, -300px) var(--my, -300px), rgba(127, 224, 178, .12), transparent 70%);
-  background-repeat: no-repeat;
-  transition: --mx .18s ease-out, --my .18s ease-out;
-}
-[data-theme="light"] .panel,
-[data-theme="light"] .seg-option,
-[data-theme="light"] .explorer-btn,
-[data-theme="light"] .route-preview,
-[data-theme="light"] .route-status {
-  background-image: radial-gradient(240px circle at var(--mx, -300px) var(--my, -300px), rgba(15, 157, 108, .14), transparent 70%);
-}
-
-/* --- 3. Number ticker (health score) -----------------------------------------
-   The value counts up via rAF; keep tabular figures so it doesn't jitter. */
+/* Health values use fixed-width numerals so count-up updates do not reflow. */
 .ring-value { font-variant-numeric: tabular-nums; }
 
-/* --- 4. Dot-grid background (dot-pattern technique) --------------------------
-   Overrides the ruled-lines body::after layer with a dot grid. Same fixed
-   full-viewport layer, theme-aware density. */
+/* A contribution-square field replaces the static dot wallpaper. The fixed
+   layer moves as one GPU-composited sheet; individual live pixels remain on
+   the existing canvases, so this foundation stays inexpensive. */
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 96px;
+}
 body::after {
-  background-image: radial-gradient(rgba(178, 197, 190, .22) 1px, transparent 1.3px);
-  background-size: 26px 26px;
-  opacity: .55;
+  inset: -40px;
+  background-image: conic-gradient(from 270deg at 5px 5px, var(--dot) 25%, transparent 0);
+  background-size: 32px 32px;
+  opacity: .2;
+  animation: contribution-drift 38s var(--ease) infinite alternate;
+  will-change: transform;
 }
-[data-theme="light"] body::after {
-  background-image: radial-gradient(rgba(28, 62, 50, .24) 1px, transparent 1.3px);
-  opacity: .5;
-}
-
-/* --- Reduced motion: static, fully usable ----------------------------------- */
-@media (prefers-reduced-motion: reduce) {
-  .analyze-button::after, .new-analysis::after { display: none; }
-  .panel, .seg-option, .explorer-btn, .route-preview, .route-status { transition: none; }
+[data-theme="light"] body::after { opacity: .14; }
+@keyframes contribution-drift {
+  from { transform: translate3d(-16px, 0, 0); }
+  to { transform: translate3d(16px, -16px, 0); }
 }
 
-/* ===========================================================================
-   Magic layer v2 — additive. Tokens, blur-fade reveal, card border glow,
-   signature marquee, staggered lists, command palette. Loaded after
-   styles.css; every rule degrades gracefully and honours reduced motion.
-   =========================================================================== */
-
-/* --- Design tokens: spacing, type, motion, depth -----------------------------
-   Additive second :root block; existing --bg/--route/etc. in styles.css stay
-   authoritative for colour so the surveyor's-ledger palette is untouched. */
-:root {
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
-  --space-7: 48px;
-  --space-8: 64px;
-  --type-xs: 10px;
-  --type-sm: 11px;
-  --type-md: 12px;
-  --type-lg: 14px;
-  --type-xl: 17px;
-  --type-2xl: 23px;
-  --shadow-sm: 0 4px 14px rgba(0, 0, 0, .18);
-  --shadow-md: 0 12px 34px rgba(0, 0, 0, .26);
-  --dur-reveal: 620ms;
-  --stagger-step: 55ms;
-  --ease-out: cubic-bezier(.16, 1, .3, 1);
-}
-[data-theme="light"] {
-  --shadow-sm: 0 2px 10px rgba(20, 40, 32, .08);
-  --shadow-md: 0 10px 26px rgba(20, 40, 32, .12);
-}
-
-/* Typography polish: balanced headings, tidy rag. Pure hints — no fallback risk. */
+/* Balanced headings and readable body-copy rags, with safe long-word wraps. */
 h1, h2, h3, h4 { text-wrap: balance; }
 .hero-copy, .repo-description, .panel-subtitle, .recovery-diagnosis { text-wrap: pretty; }
 
-/* --- 5. Blur fade / scroll reveal (data-reveal) -------------------------------
-   JS arms the page with `reveal-armed` before the first paint after render;
-   without JS nothing is ever hidden. Once every target has been revealed the
-   `reveal-done` seal is set so constant re-renders (tick a checkbox) can never
-   re-hide content. bindReveals() staggers elements that enter together. */
+/* ScrollReveal's once-only viewport model, implemented on the existing
+   observer: brief vertical context plus opacity, never scroll-bound motion.
+   Without JS, nothing is hidden; rerenders never reseal revealed content. */
 html.reveal-armed:not(.reveal-done) [data-reveal] {
   opacity: 0;
-  transform: translateY(14px);
-  filter: blur(6px);
+  transform: translate3d(0, 12px, 0);
 }
 html.reveal-armed:not(.reveal-done) [data-reveal].revealed {
   opacity: 1;
-  transform: translateY(0);
-  filter: blur(0);
-  transition:
-    opacity var(--dur-reveal) var(--ease-out),
-    transform var(--dur-reveal) var(--ease-out),
-    filter var(--dur-reveal) var(--ease-out);
+  transform: translate3d(0, 0, 0);
+  transition: opacity var(--dur-major) var(--ease), transform var(--dur-major) var(--ease);
   transition-delay: var(--reveal-delay, 0ms);
 }
 html.reveal-armed:not(.reveal-done) [data-reveal-stagger] > * {
   opacity: 0;
-  transform: translateY(10px);
+  transform: translate3d(0, 8px, 0);
 }
 html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > * {
   opacity: 1;
-  transform: translateY(0);
-  transition:
-    opacity var(--dur-reveal) var(--ease-out),
-    transform var(--dur-reveal) var(--ease-out);
+  transform: translate3d(0, 0, 0);
+  transition: opacity var(--dur-normal) var(--ease), transform var(--dur-normal) var(--ease);
 }
 html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child(1) { transition-delay: calc(var(--stagger-step) * 0); }
 html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child(2) { transition-delay: calc(var(--stagger-step) * 1); }
@@ -163,38 +67,9 @@ html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child
 html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child(11) { transition-delay: calc(var(--stagger-step) * 10); }
 html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child(12) { transition-delay: calc(var(--stagger-step) * 11); }
 
-/* --- 2. Magic card, border-glow mode ------------------------------------------
-   A 1px gradient ring that brightens near the cursor, masked to the border
-   ring only (content box is punched out). Paints above nothing, shifts no
-   layout, and matches the existing --mx/--my spotlight coordinates. */
-.panel {
-  position: relative;
-}
-.panel::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: radial-gradient(280px circle at var(--mx, -300px) var(--my, -300px), rgba(127, 224, 178, .48), transparent 68%);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-          mask-composite: exclude;
-  opacity: 0;
-  transition: opacity .4s var(--ease);
-  pointer-events: none;
-}
-.panel:hover::before { opacity: 1; }
-[data-theme="light"] .panel::before {
-  background: radial-gradient(280px circle at var(--mx, -300px) var(--my, -300px), rgba(15, 157, 108, .55), transparent 68%);
-}
-
-/* --- 8. Signature marquee (failure-first strip) --------------------------------
-   CSS-only infinite loop: the track holds two identical groups and translates
-   -50%. Pauses on hover and focus-within; masks fade the edges; static wrap
-   under reduced motion. Hidden from assistive tech — the ranked fail-list
-   right below carries the same information. */
+/* Failure-signature strip: a slow, data-bearing loop with hover pause and a
+   static reduced-motion mode. The adjacent screen-reader source carries the
+   same labels without duplication. */
 .sig-marquee {
   position: relative;
   overflow: hidden;
@@ -202,20 +77,20 @@ html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child
   background: var(--panel-soft);
 }
 .sig-marquee:not(.sig-static) {
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
-          mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, var(--text) 7%, var(--text) 93%, transparent);
+          mask-image: linear-gradient(90deg, transparent, var(--text) 7%, var(--text) 93%, transparent);
 }
 .sig-marquee-track {
   display: flex;
   width: max-content;
-  animation: magic-marquee 44s linear infinite;
+  animation: signature-loop 44s linear infinite;
 }
 .sig-marquee:hover .sig-marquee-track,
-.sig-marquee:focus-within .sig-marquee-track { animation-play-state: paused; }
+body:focus-within .sig-marquee-track { animation-play-state: paused; }
 .sig-marquee-group {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
   padding: 9px 14px;
 }
 .sig-chip {
@@ -249,13 +124,11 @@ html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child
   font-size: 8.5px;
 }
 .sig-static .sig-marquee-group { flex-wrap: wrap; }
-@keyframes magic-marquee {
+@keyframes signature-loop {
   to { transform: translateX(-50%); }
 }
 
-/* --- 10. Command palette (Ctrl/Cmd+K) ------------------------------------------
-   Keyboard-first section nav + actions. Arrow keys move, Enter runs, Esc
-   closes; the focus trap from app.js handles Tab. */
+/* Keyboard-first command palette. */
 .palette-modal {
   width: min(560px, 100%);
   padding: 0;
@@ -269,6 +142,7 @@ html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child
   border-bottom: 1px solid var(--line);
   color: var(--muted-2);
 }
+.palette-input-wrap:focus-within { border-bottom-color: var(--route); }
 .palette-input {
   min-width: 0;
   flex: 1;
@@ -276,8 +150,12 @@ html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child
   color: var(--text);
   background: transparent;
   border: 0;
-  outline: 0;
+  outline: 2px solid transparent;
+  outline-offset: 1px;
   font-size: 13px;
+}
+.palette-input:focus-visible {
+  outline-color: var(--route);
 }
 .palette-input::placeholder { color: var(--muted-2); }
 .palette-list {
@@ -308,13 +186,13 @@ html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child
   font-size: 12px;
   font-weight: 600;
   text-align: left;
-  transition: background var(--dur-instant) var(--ease), color var(--dur-instant) var(--ease);
+  transition: background-color var(--dur-instant) var(--ease), color var(--dur-instant) var(--ease);
 }
-.palette-option:hover { color: var(--text); background: rgba(255, 255, 255, .03); }
+.palette-option:hover { color: var(--text); background: var(--panel-raised); }
 .palette-option.active {
   color: var(--text);
   background: var(--route-dim);
-  border-color: rgba(127, 224, 178, .22);
+  border-color: var(--route-line);
 }
 .palette-option .palette-ic { display: grid; place-items: center; flex: none; width: 22px; color: var(--muted); }
 .palette-option.active .palette-ic { color: var(--route); }
@@ -351,25 +229,19 @@ html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child
   font-family: var(--mono);
   font-size: 9px;
 }
-[data-theme="light"] .palette-option:hover { background: rgba(28, 62, 50, .05); }
 
-/* --- 11. Workspace particle field (particles.js engine) -------------------------
-   Scoped strictly to <main class="main">: the host div is absolutely
-   positioned inside the workspace and paints below .main-inner, so the
-   topbar, sidebar, modals, toasts and mobile nav are never covered. No
-   overflow clipping here — overflow:hidden would break the sticky
-   explanation column. The engine sizes its canvas to the host via JS.
-   pointer-events:none keeps clicks, selection and keyboard focus untouched.
-   Only the positioning adapts the reference CSS; the demo's red background,
-   stats badge and particle counter are intentionally excluded. */
-.main {
-  position: relative;
-}
+/* Scoped workspace and contribution canvases remain below app content. */
+.main { position: relative; }
 #particles-workspace {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
+  position: fixed;
+  top: 72px;
+  right: 304px;
+  bottom: 0;
+  left: 0;
+  z-index: var(--z-workspace);
+  opacity: .24;
   pointer-events: none;
+  overflow: hidden;
 }
 #particles-workspace .particles-js-canvas-el {
   display: block;
@@ -377,19 +249,13 @@ html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child
 }
 .main-inner {
   position: relative;
-  z-index: 1;
+  z-index: var(--z-content);
 }
-
-/* --- 12. Top bar GitHub-activity squares ---------------------------------------
-   Scoped strictly to the header so the brand and the round controls stay
-   untouched. The host is absolutely positioned inside .topbar (which is
-   position:sticky, so it anchors here) and paints below the header content.
-   pointer-events:none keeps the logo/search/moon/settings buttons clickable.
-   The canvas is self-sizing via JS; no overflow clipping needed. */
 #topbar-contrib {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: var(--z-workspace);
+  opacity: .58;
   pointer-events: none;
   overflow: hidden;
 }
@@ -400,124 +266,937 @@ html.reveal-armed:not(.reveal-done) [data-reveal-stagger].revealed > *:nth-child
 }
 .topbar > *:not(#topbar-contrib) {
   position: relative;
-  z-index: 1;
+  z-index: var(--z-content);
+}
+[data-theme="light"] #particles-workspace {
+  opacity: .16;
+  mix-blend-mode: multiply;
+}
+[data-theme="light"] #topbar-contrib { opacity: .3; }
+
+/* Strong visual pass — field-manual inversion.
+   The product keeps its exact routes, components, controls, copy, icons, and
+   mascot, but no longer shares the old left-rail / dark-card silhouette. The
+   repository brief is an inverted manual sheet; workspace context moves to a
+   right-hand rail; analysis content resolves into an open ruled ledger. */
+body {
+  font-size: 14px;
+  line-height: 1.6;
 }
 
-/* --- Reduced motion v2: everything static, nothing hidden --------------------- */
+.topbar {
+  height: 72px;
+  gap: 24px;
+  padding: 0 28px;
+  background: var(--bg);
+  border-bottom: 2px solid var(--line-strong);
+}
+.brand { gap: 11px; }
+.brand-logo, .brand-img { width: 52px; height: 52px; }
+.brand-word { font-size: 19px; }
+.brand-sub {
+  padding-left: 14px;
+  font-size: 10px;
+  letter-spacing: .14em;
+}
+.topbar-center { font-size: 13px; }
+.topbar-actions { gap: 8px; }
+.connection-pill {
+  padding: 9px 12px;
+  background: var(--panel-soft);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+.icon-button {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+}
+
+/* Context now lives on the right. This single move changes the application
+   silhouette without changing sidebar ownership or any navigation behavior. */
+.layout {
+  grid-template-columns: minmax(0, 1fr) 304px;
+  min-height: calc(100vh - 72px);
+}
+.sidebar {
+  grid-column: 2;
+  grid-row: 1;
+  position: sticky;
+  top: 72px;
+  align-self: start;
+  width: auto;
+  height: calc(100vh - 72px);
+  overflow-y: auto;
+  padding: 36px 24px 28px;
+  background: var(--panel-soft);
+  border-right: 0;
+  border-left: 2px solid var(--line-strong);
+}
+.main {
+  grid-column: 1;
+  grid-row: 1;
+  max-width: none;
+  padding: 48px clamp(32px, 5vw, 72px) 112px;
+}
+.sidebar-label {
+  margin: 0 8px 12px;
+  font-size: 10px;
+  letter-spacing: .18em;
+}
+.new-analysis {
+  margin-bottom: 36px;
+  padding: 13px 16px;
+  color: var(--route-bright);
+  background: transparent;
+  border: 1px solid var(--route-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+.new-analysis:hover {
+  color: var(--route-ink);
+  background: var(--route);
+}
+.sidebar-nav { gap: 4px; }
+.nav-item {
+  padding: 13px 10px;
+  border: 0;
+  border-radius: 0;
+  font-size: 13px;
+}
+.nav-item.active {
+  color: var(--route-bright);
+  background: var(--route-dim);
+}
+.history { margin-top: 40px; }
+.history-list { gap: 4px; }
+.history-row, .history-entry { border-radius: 0; }
+.history-entry {
+  padding: 11px 8px;
+  border: 0;
+  font-size: 12px;
+}
+.history-row.active, .history-entry.renaming { background: var(--route-dim); }
+.side-section { margin-top: 36px; }
+.file-tree {
+  max-height: 380px;
+  padding: 8px 0;
+  background: transparent;
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+}
+.tree-filter {
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 0;
+  font-size: 12px;
+}
+.tree-row { padding: 7px 8px; border-radius: 0; font-size: 12px; }
+.local-note { font-size: 11px; }
+
+/* The opening brief is a light field-manual sheet in dark mode and a dark
+   sheet in light mode. It is the dominant, immediate before/after signal. */
+.hero {
+  position: relative;
+  isolation: isolate;
+  min-height: 520px;
+  max-width: none;
+  margin: 0 0 56px;
+  padding: 52px 44% 56px 56px;
+  color: var(--manual-ink);
+  background: var(--manual);
+  border-top: 8px solid var(--route);
+  overflow: hidden;
+  animation: none;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: -40px;
+  z-index: var(--z-workspace);
+  pointer-events: none;
+  background-image:
+    conic-gradient(from 270deg at 6px 6px, var(--manual-accent) 25%, transparent 0),
+    conic-gradient(from 270deg at 6px 6px, var(--manual-accent) 25%, transparent 0);
+  background-position: 0 0, 18px 18px;
+  background-size: 18px 18px, 54px 54px;
+  opacity: .055;
+  -webkit-mask-image: linear-gradient(100deg, transparent 2%, rgba(0, 0, 0, .14) 34%, #000 74%, rgba(0, 0, 0, .45));
+          mask-image: linear-gradient(100deg, transparent 2%, rgba(0, 0, 0, .14) 34%, #000 74%, rgba(0, 0, 0, .45));
+  animation: contribution-drift 46s var(--ease) infinite alternate-reverse;
+  will-change: transform;
+}
+.hero > .eyebrow,
+.hero > h1,
+.hero > .hero-copy,
+.hero > .repo-form,
+.hero > .seg-block,
+.hero > .form-meta,
+.hero > .error-banner {
+  position: relative;
+  z-index: var(--z-content);
+}
+.hero > .eyebrow { animation: manual-enter 420ms var(--ease) 40ms both; }
+.hero > h1 { animation: manual-enter 520ms var(--ease) 80ms both; }
+.hero > .hero-copy { animation: manual-enter 520ms var(--ease) 140ms both; }
+.hero > .repo-form { animation: manual-enter 460ms var(--ease) 110ms both; }
+.hero > .seg-block { animation: manual-enter 460ms var(--ease) 170ms both; }
+.hero > .form-meta { animation: manual-enter 460ms var(--ease) 220ms both; }
+.hero > .error-banner { animation: manual-enter 320ms var(--ease) both; }
+@keyframes manual-enter {
+  from { opacity: 0; transform: translate3d(0, 12px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+.eyebrow {
+  margin-bottom: 20px;
+  color: var(--manual-accent);
+  font-size: 11px;
+  letter-spacing: .18em;
+}
+.eyebrow-line { width: 28px; background: var(--manual-accent); }
+h1 {
+  max-width: 15ch;
+  color: var(--manual-ink);
+  font-size: clamp(44px, 3.45vw, 52px);
+  line-height: 1.01;
+  letter-spacing: -.04em;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+h1 span { color: var(--manual-muted); }
+.hero-copy {
+  max-width: 46ch;
+  color: var(--manual-muted);
+  font-size: 16px;
+  line-height: 1.68;
+}
+
+.repo-form {
+  max-width: none;
+  padding: 9px;
+  gap: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  box-shadow: none;
+}
+.repo-form:focus-within {
+  border-color: var(--route);
+  box-shadow: 0 0 0 2px var(--route-dim);
+}
+.repo-input { height: 50px; font-size: 14px; }
+.analyze-button {
+  min-height: 50px;
+  padding: 0 22px;
+  border-radius: 0;
+  font-size: 13px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .analyze-button:not(:disabled),
+  .install-button:not(:disabled),
+  .new-analysis {
+    transition: color var(--dur-instant) var(--ease), background-color var(--dur-instant) var(--ease),
+      border-color var(--dur-instant) var(--ease), transform var(--dur-instant) var(--ease),
+      box-shadow var(--dur-instant) var(--ease);
+  }
+  .analyze-button:hover:not(:disabled),
+  .install-button:hover:not(:disabled),
+  .new-analysis:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+  }
+  .analyze-button:active:not(:disabled),
+  .install-button:active:not(:disabled),
+  .new-analysis:active {
+    transform: translateY(1px);
+    box-shadow: none;
+  }
+  .nav-item,
+  .history-entry,
+  .tree-row.dir { transition: color var(--dur-instant) var(--ease), background-color var(--dur-instant) var(--ease), transform var(--dur-instant) var(--ease); }
+  .nav-item:hover,
+  .history-entry:hover,
+  .tree-row.dir:hover { transform: translateX(2px); }
+}
+.seg-block { max-width: none; margin-top: 20px; }
+.seg-label { margin-bottom: 10px; font-size: 11px; }
+.seg-row {
+  gap: 0;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+}
+.seg-option {
+  min-height: 74px;
+  padding: 13px 14px;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+}
+.seg-option:last-child { border-right: 0; }
+.seg-option:hover { background: var(--panel-raised); }
+.seg-option.active {
+  background: var(--route-dim);
+  border-color: var(--line);
+  box-shadow: inset 0 -3px 0 var(--route);
+}
+.seg-option strong { font-size: 12px; }
+.seg-option span { font-size: 10.5px; }
+.form-meta {
+  margin-top: 16px;
+  gap: 8px 16px;
+  font-size: 11px;
+}
+
+/* Inverted control colors inside the field-manual sheet. */
+.hero .repo-form {
+  display: block;
+  background: var(--manual-control);
+  border-color: var(--manual-control);
+}
+.hero .analyze-button { width: 100%; margin-top: 8px; }
+.hero .repo-input { color: var(--manual-control-text); }
+.hero .repo-input::placeholder { color: var(--manual-control-muted); }
+.hero .repo-input-wrap svg { color: var(--manual-control-muted); }
+.hero .seg-label, .hero .form-meta { color: var(--manual-muted); }
+.hero .seg-label em { color: var(--manual-muted); }
+.hero .seg-row { border-color: var(--manual-line); }
+.hero .seg-option { border-color: var(--manual-line); }
+.hero .seg-option:hover { background: var(--manual-line); }
+.hero .seg-option strong { color: var(--manual-ink); }
+.hero .seg-option span { color: var(--manual-muted); }
+.hero .seg-option.active {
+  background: var(--manual-control);
+  box-shadow: inset 0 -4px 0 var(--route);
+}
+.hero .seg-option.active strong { color: var(--route); }
+.hero .seg-option.active span { color: var(--manual-control-muted); }
+.hero .form-meta .shortcut { border-color: var(--manual-line); }
+.hero .error-banner { background: var(--manual-control); }
+
+@media (min-width: 1200px) {
+  .hero > .repo-form,
+  .hero > .seg-block,
+  .hero > .form-meta,
+  .hero > .error-banner {
+    position: absolute;
+    right: 56px;
+    left: 56%;
+    width: auto;
+    max-width: none;
+    margin: 0;
+  }
+  .hero > .repo-form { top: 56px; }
+  .hero > .seg-block { top: 210px; }
+  .hero > .form-meta { top: 352px; }
+  .hero > .error-banner { top: 416px; }
+}
+
+/* Analysis starts with the same manual sheet as a compact scan console. The
+   three existing siblings remain separate DOM components but form one band. */
+.main-inner > .repo-form {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--manual-ink);
+  background: var(--manual);
+  border: 0;
+  border-top: 8px solid var(--route);
+}
+.main-inner > .repo-form .repo-input { color: var(--manual-ink); }
+.main-inner > .repo-form .repo-input::placeholder { color: var(--manual-muted); }
+.main-inner > .repo-form .repo-input-wrap svg { color: var(--manual-muted); }
+.main-inner > .seg-block {
+  margin: 0;
+  padding: 18px 20px 0 28px;
+  color: var(--manual-ink);
+  background: var(--manual);
+}
+.main-inner > .seg-block .seg-label,
+.main-inner > .seg-block .seg-label em { color: var(--manual-muted); }
+.main-inner > .seg-block .seg-row { border-color: var(--manual-line); }
+.main-inner > .seg-block .seg-option { border-color: var(--manual-line); }
+.main-inner > .seg-block .seg-option:hover { background: var(--manual-line); }
+.main-inner > .seg-block .seg-option strong { color: var(--manual-ink); }
+.main-inner > .seg-block .seg-option span { color: var(--manual-muted); }
+.main-inner > .seg-block .seg-option.active {
+  background: var(--manual-control);
+  box-shadow: inset 0 -4px 0 var(--route);
+}
+.main-inner > .seg-block .seg-option.active strong { color: var(--route); }
+.main-inner > .seg-block .seg-option.active span { color: var(--manual-control-muted); }
+.main-inner > .form-meta {
+  margin: 0 0 48px;
+  padding: 18px 20px 24px 28px;
+  color: var(--manual-muted);
+  background: var(--manual);
+  border-bottom: 8px solid var(--route);
+}
+.main-inner > .form-meta .shortcut { border-color: var(--manual-line); }
+
+.initial-content {
+  margin-top: 0;
+  padding-top: 14px;
+  border-top: 0;
+}
+.section-kicker {
+  margin-bottom: 20px;
+  color: var(--text);
+  font-size: 14px;
+  letter-spacing: -.01em;
+}
+.section-kicker::after { display: none; }
+.route-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, .9fr) minmax(0, .9fr);
+  gap: 18px;
+  max-width: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+.route-stop {
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 18px;
+  min-height: 168px;
+  padding: 30px 22px;
+  background: transparent;
+  border: 0;
+}
+.route-stop:nth-child(2) {
+  background: var(--panel-soft);
+  box-shadow: inset 0 1px 0 var(--line-strong), var(--shadow);
+}
+.route-mile {
+  padding: 0;
+  color: var(--route);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: 19px;
+  text-align: left;
+}
+.route-stop h3 { font-size: 18px; line-height: 1.35; }
+.route-stop p { max-width: 42ch; font-size: 13px; line-height: 1.72; }
+.example-row { margin-top: 32px; color: var(--muted); font-size: 11.5px; }
+.example-chip { border-radius: 0; font-size: 11.5px; }
+
+.analysis-view { margin-top: 0; }
+.analysis-head {
+  gap: 32px;
+  margin-bottom: 38px;
+  padding: 0;
+  border-bottom: 0;
+}
+.repo-identity { gap: 20px; }
+.repo-avatar {
+  width: 60px;
+  height: 60px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  box-shadow: inset 0 3px 0 var(--route);
+}
+.analysis-head h2 { font-size: 44px; line-height: .98; }
+.repo-url { font-size: 11.5px; line-height: 1.6; }
+.repo-description { max-width: 62ch; font-size: 14px; line-height: 1.7; }
+.analysis-actions { gap: 8px; }
+.analysis-actions .seg-inline {
+  max-width: 280px;
+  flex-wrap: wrap;
+  border-radius: 0;
+}
+.analysis-actions .seg-note {
+  flex: 1 0 100%;
+  padding: 3px 7px 1px;
+  text-align: center;
+}
+.secondary-button, .install-button {
+  min-height: 42px;
+  padding: 9px 15px;
+  border-radius: 0;
+  font-size: 12px;
+}
+.seg-chip { border-radius: 0; font-size: 10.5px; }
+
+.route-nav {
+  gap: 4px;
+  margin: 0 0 28px;
+  padding: 4px;
+  background: var(--panel-soft);
+  border: 0;
+  box-shadow: inset 0 1px 0 var(--line);
+}
+.route-nav a {
+  position: relative;
+  flex: 1;
+  justify-content: center;
+  padding: 12px 10px 13px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: 11px;
+  overflow: hidden;
+}
+.route-nav a::after {
+  content: '';
+  position: absolute;
+  right: 14px;
+  bottom: 4px;
+  left: 14px;
+  height: 2px;
+  background: var(--route);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--dur-normal) var(--ease);
+}
+.route-nav a:hover,
+.route-nav a:focus-visible { color: var(--route-bright); background: var(--route-dim); }
+.route-nav a:hover::after,
+.route-nav a:focus-visible::after { transform: scaleX(1); }
+.route-status {
+  margin-bottom: 32px;
+  padding: 26px 28px;
+  color: var(--manual-ink);
+  background: var(--manual);
+  border: 0;
+  border-top: 8px solid var(--route);
+  border-radius: 0;
+}
+[data-theme="light"] .route-status { background: var(--manual); }
+.route-status .route-kicker,
+.route-status .progress-copy strong { color: var(--manual-accent); }
+.route-status .route-kicker { font-size: 11.5px; }
+.route-status .route-verdict { color: var(--manual-ink); font-size: 14px; line-height: 1.7; }
+.route-status .route-verdict.dim,
+.route-status .progress-copy { color: var(--manual-muted); }
+.route-status .progress-copy { font-size: 11px; }
+.route-status .progress-track { background: var(--manual-line); }
+.route-status .progress-fill { background: var(--manual-accent); }
+.overview-strip {
+  gap: 8px;
+  margin-bottom: 48px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+.overview-cell {
+  min-height: 96px;
+  padding: 20px 22px;
+  background: var(--panel-soft);
+  border: 0;
+}
+.overview-cell.summary { box-shadow: inset 3px 0 0 var(--route); }
+.overview-cell .cell-label { font-size: 11px; letter-spacing: .08em; }
+.overview-cell .cell-value { margin-top: 10px; font-size: 17px; line-height: 1.55; }
+.overview-cell .cell-value.mono { font-size: 12.5px; }
+.dashboard-grid {
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, .7fr);
+  gap: 36px;
+}
+
+/* Panels now read as chapters: whitespace carries the hierarchy, while only
+   supporting/reference groups receive a tonal surface. */
+.panel {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.panel + .panel { margin-top: 58px; }
+.panel.elevated { box-shadow: none; }
+.panel-heading {
+  gap: 18px;
+  padding: 18px 0 22px;
+  background: transparent;
+  border: 0;
+}
+.panel-title-wrap { gap: 14px; }
+.panel-icon {
+  width: 34px;
+  height: 34px;
+  color: var(--route);
+  background: var(--route-dim);
+  border-radius: 0;
+}
+.panel h3 { margin-top: 1px; font-size: 20px; line-height: 1.3; letter-spacing: -.02em; }
+.panel-subtitle { max-width: 62ch; margin-top: 6px; font-size: 13px; line-height: 1.65; }
+.panel-count { font-size: 10.5px; }
+.install-list { padding: 0; }
+.step-row {
+  gap: 18px;
+  margin-top: 4px;
+  padding: 20px 0;
+  border-bottom: 0;
+}
+.step-row:hover { background: var(--panel-soft); }
+.step-number {
+  background: transparent;
+  border-radius: 0;
+  font-size: 11px;
+}
+.step-title { font-size: 15px; line-height: 1.45; }
+.step-id { background: transparent; border-radius: 0; font-size: 9.5px; }
+.step-state { font-size: 10px; }
+.step-detail { max-width: 70ch; font-size: 13px; line-height: 1.72; }
+.command-block {
+  padding: 14px 88px 14px 14px;
+  border-radius: 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.copy-mini { border-radius: 0; }
+.install-progress { padding: 20px 0 24px; background: transparent; border-top: 0; }
+.info-grid { gap: 18px; margin-bottom: 52px; }
+.info-grid .info-panel,
+.primary-stack > .panel:not(.plain-panel),
+.sticky-column > .panel {
+  padding: 20px;
+  background: var(--panel-soft);
+}
+.info-grid .panel + .panel { margin-top: 0; }
+.info-panel .panel-heading { padding: 4px 0 18px; }
+.info-panel .panel-heading h3 { font-size: 17px; }
+.info-list { padding: 4px 0 8px; }
+.info-item { padding: 10px 0; border-bottom: 0; font-size: 12.5px; line-height: 1.65; }
+.sticky-column > .panel { top: 96px; }
+
+.plain-analogy {
+  padding: 16px 18px;
+  background: var(--route-dim);
+  border: 0;
+  border-radius: 0;
+  box-shadow: inset 3px 0 0 var(--route);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.plain-grid {
+  gap: 12px;
+  border: 0;
+}
+.plain-card {
+  padding: 18px;
+  background: var(--panel-soft);
+  border: 0;
+  border-radius: 0;
+}
+.plain-card:nth-child(2), .plain-card.wide { border: 0; }
+.plain-card.wide { background: transparent; box-shadow: inset 0 1px 0 var(--line); }
+.plain-card p,
+.plain-card ol { font-size: 13px; line-height: 1.72; }
+.plain-kicker { font-size: 10px; }
+.insight-list { gap: 10px; }
+.insight-list li {
+  padding: 14px 14px 14px 34px;
+  background: var(--panel-soft);
+  border: 0;
+  border-radius: 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.insight-list li::before {
+  top: 21px;
+  width: 6px;
+  height: 6px;
+  border-radius: 0;
+}
+.health-body {
+  padding: 28px 24px;
+  background: var(--panel-soft);
+}
+.health-factors { gap: 18px; }
+.factor-top { font-size: 12.5px; }
+.factor p { font-size: 12px; line-height: 1.65; }
+.health-foot,
+.fail-foot { border-top: 0; }
+.cap-item, .fail-notice, .graph-alt, .graph-tradeoff,
+.contract-gaps, .fail-expect { border-radius: 0; }
+.fail-list { gap: 10px; }
+.fail-row {
+  padding: 20px;
+  background: var(--panel-soft);
+  border-bottom: 0;
+}
+.fail-title h4 { font-size: 14px; line-height: 1.45; }
+.fail-main p { font-size: 13px; line-height: 1.7; }
+.fail-scale, .fail-foot, .health-foot { font-size: 10.5px; }
+.origin-badge, .patched, .unpatched, .path-pill,
+.rev-badge, .tag, .quick-pick { border-radius: 0; }
+.path-pill { background: transparent; }
+.followup-chip { background: transparent; border-radius: 0; }
+.contract-meta {
+  padding: 14px 18px;
+  border-bottom: 0;
+}
+.contract-grid {
+  gap: 28px;
+  padding: 26px 22px;
+  background: var(--panel-soft);
+}
+.contract-section h4 { font-size: 10.5px; }
+.contract-list strong { font-size: 13px; }
+.contract-list span, .contract-list code { font-size: 12px; line-height: 1.65; }
+.contract-check,
+.contract-sign,
+.contract-guarantees { border-top: 0; }
+.contract-meta, .contract-guarantees { font-size: 10.5px; }
+
+/* Reading matter is deliberately larger than controls and metadata. */
+.plain-body,
+.explorer-body { padding: 8px 0 0; }
+.explorer-grid { gap: 10px; }
+.explorer-btn {
+  min-height: 64px;
+  padding: 14px;
+  background: var(--panel-soft);
+  border: 0;
+  border-radius: 0;
+}
+.explorer-btn.active { box-shadow: inset 0 -3px 0 var(--route); }
+.explorer-text strong { font-size: 13px; }
+.explorer-text small { font-size: 11.5px; line-height: 1.55; }
+.explanation-content { padding: 10px 0 4px; }
+.explanation-select { min-height: 38px; height: 38px; font-size: 11.5px; border-radius: 0; }
+.explanation-content h4 { margin-top: 18px; font-size: 17px; line-height: 1.4; }
+.explanation-content p { font-size: 13px; line-height: 1.75; }
+.explanation-tip { padding: 12px; border: 0; border-radius: 0; font-size: 12px; line-height: 1.65; }
+.files-panel .file-list { padding: 8px 0 2px; }
+.file-chip { font-size: 10px; border-radius: 0; }
+.insight-intro { font-size: 13px; line-height: 1.75; }
+.insight-outro { font-size: 12.5px; line-height: 1.7; border: 0; border-radius: 0; }
+.followups { border-top: 0; }
+.followup-chip { font-size: 11.5px; }
+.health-band span { font-size: 11.5px; line-height: 1.6; }
+.cap-item { font-size: 12px; line-height: 1.6; }
+.graph-tradeoff { font-size: 12px; line-height: 1.65; }
+.contract-state { font-size: 12.5px; line-height: 1.7; }
+.contract-check label { font-size: 12.5px; line-height: 1.6; }
+.contract-guarantees { font-size: 11.5px; line-height: 1.65; }
+.recovery-body { padding: 10px 0 18px; }
+.recovery-diagnosis { font-size: 14px; line-height: 1.7; }
+.recovery-second,
+.recovery-list { font-size: 12.5px; line-height: 1.7; }
+
+.modal, .palette-modal { border-radius: 0; }
+.text-field, .select-field { border-radius: 0; font-size: 12px; }
+.sig-chip { background: transparent; border-radius: 0; font-size: 10.5px; }
+
+#particles-workspace { opacity: .24; }
+#topbar-contrib { opacity: .58; }
+[data-theme="light"] #particles-workspace {
+  opacity: .16;
+  mix-blend-mode: multiply;
+}
+[data-theme="light"] #topbar-contrib { opacity: .3; }
+
+@media (max-width: 1399px) {
+  .analysis-head { display: block; }
+  .analysis-actions { margin-top: 24px; }
+}
+@media (max-width: 1199px) {
+  .hero {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 48px;
+  }
+  .hero > .repo-form { order: 1; margin-top: 36px; }
+  .hero > .error-banner { order: 2; width: 100%; max-width: none; }
+  .hero > .seg-block { order: 3; }
+  .hero > .form-meta { order: 4; }
+}
+@media (max-width: 1100px) {
+  #particles-workspace { right: 220px; }
+  .layout { grid-template-columns: minmax(0, 1fr) 220px; }
+  .sidebar {
+    grid-column: 2;
+    width: auto;
+    padding: 28px 16px 24px;
+  }
+  .sidebar-label { display: block; }
+  .nav-item span:not(.nav-icon),
+  .new-analysis span { display: inline; }
+  .history, .sidebar-foot { display: block; }
+  .new-analysis {
+    width: 100%;
+    height: auto;
+    margin: 0 0 32px;
+    padding: 12px 10px;
+  }
+  .nav-item { justify-content: flex-start; padding: 12px 8px; }
+  .nav-item .nav-icon { width: 22px; }
+  .main { grid-column: 1; padding-right: 36px; padding-left: 36px; }
+}
+@media (max-width: 900px) {
+  .main { padding-top: 36px; }
+  .hero { padding: 40px; }
+  .route-preview { display: block; }
+  .route-stop {
+    min-height: 0;
+    border: 0;
+  }
+  .route-stop + .route-stop { margin-top: 8px; }
+  .dashboard-grid { grid-template-columns: minmax(0, 1fr); }
+  .sticky-column > .panel { position: static; }
+}
+@media (max-width: 720px) {
+  #particles-workspace { right: 0; bottom: 64px; }
+  .topbar { padding: 0 16px; }
+  .layout { display: block; min-height: calc(100vh - 72px); }
+  .sidebar { display: none; }
+  .main { display: block; padding: 32px 20px 96px; }
+  .mobile-nav,
+  [data-theme="light"] .mobile-nav {
+    display: flex;
+    color: var(--manual-ink);
+    background: var(--manual);
+    border-top: 6px solid var(--route);
+  }
+  .mobile-nav-item { color: var(--manual-muted); border-radius: 0; }
+  .mobile-nav-item:hover, .mobile-nav-item:active {
+    color: var(--manual-accent);
+    background: transparent;
+  }
+  .oreo-float { right: 12px; bottom: 64px; }
+  body:has(.hero > .error-banner) .oreo-float { top: 76px; bottom: auto; }
+  body:has(.hero > .error-banner) .oreo-tip { display: none; }
+  .oreo-panel {
+    right: 12px;
+    bottom: 76px;
+    left: 12px;
+    width: auto;
+    height: min(400px, calc(100vh - 190px));
+  }
+  .hero {
+    margin-right: -20px;
+    margin-left: -20px;
+    padding: 40px 20px 48px;
+    border-top-width: 6px;
+  }
+  h1 { max-width: 15ch; font-size: clamp(34px, 9.6vw, 44px); line-height: 1.03; }
+  .hero-copy { max-width: 52ch; font-size: 15px; line-height: 1.68; }
+  .repo-form { display: block; }
+  .analyze-button { width: 100%; margin-top: 4px; }
+  .seg-row { grid-template-columns: minmax(0, 1fr); }
+  .seg-option {
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .seg-option:last-child { border-bottom: 0; }
+  .main-inner > .repo-form,
+  .main-inner > .seg-block,
+  .main-inner > .form-meta {
+    margin-right: -20px;
+    margin-left: -20px;
+  }
+  .main-inner > .repo-form { padding: 12px 20px; }
+  .main-inner > .seg-block { padding: 18px 20px 0; }
+  .main-inner > .form-meta { padding: 18px 20px 24px; }
+  .overview-strip {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "summary summary" "branch language" "files files";
+  }
+  .route-nav a { flex: 0 0 calc(50% - 2px); border: 0; }
+  .route-status { grid-template-columns: minmax(0, 1fr); padding: 22px 20px; }
+  .info-grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .health-body { grid-template-columns: minmax(0, 1fr); }
+  .fail-row { grid-template-columns: 28px minmax(0, 1fr); padding: 18px; }
+  .fail-patch { grid-column: 2; }
+  .contract-grid { grid-template-columns: minmax(0, 1fr); }
+  .panel-heading { padding: 18px 0; }
+  .panel-count { max-width: 34%; }
+}
+@media (max-width: 600px) {
+  #particles-workspace { top: 64px; }
+  .topbar { height: 64px; }
+  .layout { display: block; min-height: calc(100vh - 64px); }
+  .sidebar { display: none; }
+  .main { display: block; padding-right: 16px; padding-left: 16px; }
+  .brand-logo, .brand-img { width: 44px; height: 44px; }
+  .hero {
+    margin-top: -32px;
+    margin-right: -16px;
+    margin-left: -16px;
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+  .initial-content { padding-top: 28px; }
+  .main-inner > .repo-form,
+  .main-inner > .seg-block,
+  .main-inner > .form-meta {
+    margin-right: -16px;
+    margin-left: -16px;
+  }
+  .analysis-head h2 { font-size: 34px; }
+  .analysis-actions { width: 100%; }
+  .analysis-actions button { flex: 1; }
+  .analysis-actions .seg-inline { width: 100%; max-width: none; }
+  .panel + .panel { margin-top: 42px; }
+  .install-list { padding: 0; }
+  .step-row { gap: 10px; padding: 18px 0; }
+  .step-body { padding-right: 36px; }
+}
+
+/* The route marker communicates selected navigation; it does not animate on
+   hover or compete with the existing color state. */
+.nav-item { position: relative; }
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 60%;
+  background: var(--route);
+  border-radius: 0 3px 3px 0;
+  transform: translateY(-50%);
+  opacity: 0;
+}
+.nav-item.active::before { opacity: 1; }
+
+/* Checked work receives one restrained state ring. */
+.step-check:checked { box-shadow: 0 0 0 3px var(--route-dim); }
+.step-title { line-height: 1.5; }
+
 @media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  body::after,
+  .hero::before,
+  .hero > .eyebrow,
+  .hero > h1,
+  .hero > .hero-copy,
+  .hero > .repo-form,
+  .hero > .seg-block,
+  .hero > .form-meta,
+  .hero > .error-banner {
+    animation: none !important;
+    transform: none !important;
+  }
   html.reveal-armed [data-reveal],
   html.reveal-armed [data-reveal-stagger] > * {
     opacity: 1 !important;
     transform: none !important;
-    filter: none !important;
     transition: none !important;
   }
   #particles-workspace {
-    display: none; /* engine is never started; the static dot grid remains */
+    display: none;
   }
   #topbar-contrib canvas {
-    opacity: 1; /* static speckle is painted once by JS; nothing animates */
+    opacity: 1;
   }
   .sig-marquee-track {
     animation: none;
     width: auto;
     flex-wrap: wrap;
   }
+  .sig-marquee-track .sig-marquee-group:nth-child(2) { display: none; }
   .sig-marquee:not(.sig-static) {
     -webkit-mask-image: none;
             mask-image: none;
   }
-}
-
-/* ===========================================================================
-   Magic layer v3 — entrance variants, hover refinements, typography polish
-   =========================================================================== */
-
-/* --- Keyframes: entrance variants (Animate.css-style) ----------------------- */
-@keyframes rise-left {
-  from { opacity: 0; transform: translateX(-18px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-@keyframes rise-right {
-  from { opacity: 0; transform: translateX(18px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-@keyframes scale-in {
-  from { opacity: 0; transform: scale(0.96); }
-  to   { opacity: 1; transform: scale(1); }
-}
-
-/* --- Reveal variants: data-reveal="left" | "right" | "scale" ---------------
-   These override the default translateY(14px) hidden state and the
-   translateY(0) revealed state when the attribute is present.              */
-html.reveal-armed:not(.reveal-done) [data-reveal="left"] {
-  transform: translateX(-18px);
-}
-html.reveal-armed:not(.reveal-done) [data-reveal="right"] {
-  transform: translateX(18px);
-}
-html.reveal-armed:not(.reveal-done) [data-reveal="scale"] {
-  transform: scale(0.96);
-}
-html.reveal-armed:not(.reveal-done) [data-reveal="left"].revealed,
-html.reveal-armed:not(.reveal-done) [data-reveal="right"].revealed {
-  transform: translateX(0);
-}
-html.reveal-armed:not(.reveal-done) [data-reveal="scale"].revealed {
-  transform: scale(1);
-}
-
-/* --- Hover micro-interactions (Hover.css-style) ----------------------------- */
-
-/* Nav item: sliding mint accent bar from left */
-.nav-item { position: relative; }
-.nav-item::before {
-  content: '';
-  position: absolute;
-  left: 0; top: 50%;
-  width: 3px; height: 60%;
-  background: var(--route);
-  border-radius: 0 3px 3px 0;
-  transform: translateY(-50%) scaleY(0);
-  transition: transform var(--dur-normal) var(--ease);
-}
-.nav-item:hover::before { transform: translateY(-50%) scaleY(1); }
-.nav-item.active::before { transform: translateY(-50%) scaleY(1); }
-
-/* Example chip: gentle scale alongside existing lift */
-.example-chip:hover { transform: translateY(-1px) scale(1.02); }
-
-/* Copy-mini: subtle scale on hover */
-.copy-mini:hover { transform: scale(1.08); }
-
-/* Step checkbox: ring glow when checked */
-.step-check:checked { box-shadow: 0 0 0 3px rgba(127, 224, 178, .15); }
-
-/* Tree row (dir): subtle indent slide on hover */
-.tree-row.dir { transition: padding-left var(--dur-normal) var(--ease), color var(--dur-instant) var(--ease), background var(--dur-instant) var(--ease); }
-.tree-row.dir:hover { padding-left: 11px; }
-
-/* Followup chip: scale alongside existing lift */
-.followup-chip:hover { transform: translateY(-1px) scale(1.02); }
-
-/* --- Typography rhythm (Vanilla Framework-style) ----------------------------- */
-
-/* Let headings inherit letter-spacing from body; they already specify
-   tight negative values which take precedence, but inherit prevents
-   conflict if body spacing changes. */
-h1, h2, h3, h4 { letter-spacing: inherit; }
-h1 { letter-spacing: -.03em; }
-h2 { letter-spacing: -.02em; }
-h3 { letter-spacing: -.01em; }
-
-/* Slightly more breathing room after hero headline */
-h1 + .hero-copy { margin-top: 22px; }
-
-/* Better multi-line readability for step titles */
-.step-title { line-height: 1.65; }
-
-/* --- Reduced motion v3: disable all new animations --------------------------- */
-@media (prefers-reduced-motion: reduce) {
-  .nav-item::before { transition: none; transform: translateY(-50%) scaleY(1); }
-  .tree-row.dir { transition: none; }
 }

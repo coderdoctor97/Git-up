@@ -1,7 +1,7 @@
 // UI system smoke tests for the Magic-layer upgrade. These run the real client
 // module against the DOM stub and assert that the new additive patterns render
-// correct, accessible markup: bento overview, signature strip, blur-fade reveal
-// attributes, and the command palette. No network, no browser.
+// correct, accessible markup: bento overview, signature strip, restrained reveal
+// hooks, and the command palette. No network, no browser.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

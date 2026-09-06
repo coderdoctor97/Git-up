@@ -1,58 +1,21 @@
 import { composeSteps, keyOf, progressOf, applyRevision, revisionEntry, selectionsLabel, EXPERTISE_LEVELS, tuneGuide } from './path-engine.js';
-import { bindSpotlight, bindTickers, bindReveals } from './magic.js';
+import { bindTickers, bindReveals } from './magic.js';
 import { initParticles } from './particles-workspace.js';
 import { initTopbarContributions } from './topbar-contributions.js';
+import { icon } from './icons.js';
+import { AI_CONNECTION, AI_PROVIDER, activeConnectionState, connectionPresentation, customConfigReady, normaliseAiProvider } from './ai/ai-provider.js';
+import { aiService } from './ai/ai-service.js';
+import { POLLINATIONS_DEFAULT_MODEL } from './ai/pollinations-provider.js';
 
 const root = document.querySelector('#app');
 
-const icons = {
-  mark: '<path d="M7.6 4.3 10 2l2.4 2.3 3.3-.2-.2 3.3L18 10l-2.5 2.6.2 3.3-3.3-.2L10 18l-2.4-2.3-3.3.2.2-3.3L2 10l2.5-2.6-.2-3.3 3.3.2Z" fill="currentColor"/><path d="m7.2 10.1 1.8 1.8 3.9-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
-  github: '<path d="M9 19c-4.2 1.3-4.2-2.1-5.9-2.6M14.9 21v-3.2c0-1 .1-1.5-.5-2.1 3.3-.4 6.7-1.6 6.7-7 0-1.5-.5-2.8-1.4-3.8.1-.4.6-1.9-.1-3.8 0 0-1.2-.4-3.9 1.4a13.6 13.6 0 0 0-7.1 0C6 0.7 4.8 1.1 4.8 1.1c-.7 1.9-.2 3.4-.1 3.8-.9 1-1.4 2.3-1.4 3.8 0 5.4 3.4 6.6 6.7 7-.6.5-.6 1.1-.6 2.1V21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
-  settings: '<path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m19.4 15 .1.1a1.8 1.8 0 0 1-2.5 2.5l-.1-.1a1.8 1.8 0 0 0-3 .8v.2a1.8 1.8 0 0 1-3.6 0v-.2a1.8 1.8 0 0 0-3-.8l-.1.1a1.8 1.8 0 1 1-2.5-2.5l.1-.1a1.8 1.8 0 0 0-.8-3H4a1.8 1.8 0 0 1 0-3.6h.2a1.8 1.8 0 0 0 .8-3l-.1-.1a1.8 1.8 0 1 1 2.5-2.5l.1.1a1.8 1.8 0 0 0 3-.8V4a1.8 1.8 0 0 1 3.6 0v.2a1.8 1.8 0 0 0 3 .8l.1-.1a1.8 1.8 0 1 1 2.5 2.5l-.1.1a1.8 1.8 0 0 0 .8 3h.2a1.8 1.8 0 0 1 0 3.6h-.2a1.8 1.8 0 0 0-.8.9Z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>',
-  plus: '<path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
-  grid: '<rect x="4" y="4" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="4" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="4" y="14" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="14" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>',
-  clock: '<circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 7v5l3.2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
-  external: '<path d="M14 5h5v5M19 5l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 13.5V18a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
-  arrow: '<path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
-  search: '<circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m16 16 4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
-  check: '<path d="m5 12 4.2 4.2L19 6.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
-  copy: '<rect x="8" y="8" width="10" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.5"/>',
-  close: '<path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
-  key: '<rect x="3.5" y="10" width="17" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 10V7.5a5 5 0 0 1 10 0V10M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01M16 17h.01" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
-  eye: '<path d="M3.2 12s3.1-5 8.8-5 8.8 5 8.8 5-3.1 5-8.8 5-8.8-5-8.8-5Z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/>',
-  eyeOff: '<path d="m4 4 16 16M10.6 6.9C11 6.8 11.5 6.8 12 6.8c5.7 0 8.8 5.2 8.8 5.2a15 15 0 0 1-2.4 2.8M6.2 6.9C4.1 8.3 3.2 12 3.2 12s3.1 5.2 8.8 5.2c1.1 0 2.1-.2 3-.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
-  spark: '<path d="m12 2 1.4 6.6L20 10l-6.6 1.4L12 18l-1.4-6.6L4 10l6.6-1.4L12 2ZM19 16l.6 2.4L22 19l-2.4.6L19 22l-.6-2.4L16 19l2.4-.6L19 16Z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/>',
-  layers: '<path d="m12 3 8 4-8 4-8-4 8-4ZM4 12l8 4 8-4M4 17l8 4 8-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
-  list: '<path d="M8 6h11M8 12h11M8 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
-  terminal: '<rect x="3" y="4.5" width="18" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m7 9 3 3-3 3M13 15h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
-  info: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 11v5M12 8h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
-  warning: '<path d="m12 3 9 17H3L12 3Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 9v4M12 16h.01" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
-  refresh: '<path d="M20 11a8 8 0 0 0-14.5-4L4 9M4 5v4h4M4 13a8 8 0 0 0 14.5 4L20 15M20 19v-4h-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
-  download: '<path d="M12 3v11M8 10l4 4 4-4M5 20h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
-  book: '<path d="M5 4.5A2.5 2.5 0 0 1 7.5 2H19v17H7.5A2.5 2.5 0 0 0 5 21V4.5ZM5 4.5V21M8 6h7M8 9h8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
-  dots: '<circle cx="12" cy="5" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="19" r="1.4" fill="currentColor"/>',
-  folder: '<path d="M3.5 6.5A1.5 1.5 0 0 1 5 5h5l2 2.5h7A1.5 1.5 0 0 1 20.5 9v8a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 17v-10.5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
-  file: '<path d="M6 3.5h7L18.5 9v9.5a1 1 0 0 1-1 1h-11.5a1 1 0 0 1-1-1v-14a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13 3.5V9h5.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
-  bulb: '<path d="M9.5 18h5M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.2 1.3 2.2h4.6c.2-1 .6-1.6 1.3-2.2A6 6 0 0 0 12 3Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
-  shield: '<path d="m12 3 7 2.8v5.4c0 4.4-3 7.6-7 9.8-4-2.2-7-5.4-7-9.8V5.8L12 3Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="m9 11.5 2.2 2.2L15.5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
-  compass: '<circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
-  pencil: '<path d="m14.5 5.5 4 4L8 20l-5 1 1-5L14.5 5.5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="m12.5 7.5 4 4" fill="none" stroke="currentColor" stroke-width="1.5"/>',
-  trash: '<path d="M4 7h16M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2M6.5 7l1 12a1 1 0 0 0 1 .9h7a1 1 0 0 0 1-.9l1-12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v5M14 11v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
-  chevron: '<path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
-  chat: '<path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H9l-5 4V6.5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
-  route: '<circle cx="6" cy="19" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="18" cy="5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8.4 19H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
-  flag: '<path d="M5 21V4m0 1h12l-2.5 3.5L17 12H5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
-  sun: '<circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5 5l1.6 1.6M17.4 17.4 19 19M19 5l-1.6 1.6M6.6 17.4 5 19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
-  moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
-};
-function icon(name, size = 17, className = '') { return `<svg class="${className}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" aria-hidden="true">${icons[name] || icons.info}</svg>`; }
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 }
 /** Strip key-like secrets from anything rendered back to the page (banners, insights, recovery notes). */
 function redactSecrets(value) {
   return String(value ?? '')
-    .replace(/sk-[A-Za-z0-9-_]{8,}/g, '[redacted-key]')
+    .replace(/sk[-_][A-Za-z0-9-_]{8,}/g, '[redacted-key]')
     .replace(/gh[pousr]_[A-Za-z0-9]{8,}/g, '[redacted-token]')
     .replace(/AKIA[0-9A-Z]{12,}/g, '[redacted-key]')
     .replace(/xox[bpas]-[A-Za-z0-9-]{6,}/g, '[redacted-token]')
@@ -69,6 +32,7 @@ function loadJson(key, fallback) { try { const v = JSON.parse(localStorage.getIt
 function displayName(entry) { return (entry?.label || '').trim() || entry?.name || entry?.url || 'Repository'; }
 function persistHistory() { try { localStorage.setItem('git-up-history', JSON.stringify(state.history.slice(0, 20))); } catch { /* ignore */ } }
 const savedSettings = loadJson('git-up-settings', {});
+const savedActiveProvider = normaliseAiProvider(savedSettings?.activeProvider);
 let savedTheme = 'dark';
 try { savedTheme = localStorage.getItem('git-up-theme') || 'dark'; } catch { /* ignore */ }
 if (savedTheme !== 'light' && savedTheme !== 'dark') savedTheme = 'dark';
@@ -95,6 +59,14 @@ const state = {
   toast: null,
   settings: { baseUrl: savedSettings.baseUrl || 'https://api.openai.com/v1', endpoint: savedSettings.endpoint || '/chat/completions', model: savedSettings.model || '', apiKey: sessionStorage.getItem('git-up-api-key') || '' },
   modelOptions: Array.isArray(savedSettings.modelOptions) ? savedSettings.modelOptions : [],
+  ai: {
+    activeProvider: savedActiveProvider,
+    pollinationsStatus: AI_CONNECTION.POLLINATIONS_AUTH_REQUIRED,
+    customError: false,
+    busy: '',
+    message: '',
+    authorization: null,
+  },
   history: savedHistory,
   secretVisible: false,
   // Oreo the cat bot — floating messenger chatbot (replaces the old inline explorer)
@@ -122,7 +94,65 @@ const state = {
   progress: { phase: '', label: '', percent: 0, error: '' },
 };
 
-function hasAiConfig() { return Boolean(state.settings.baseUrl && state.settings.apiKey && state.settings.model); }
+// Persist the safe default when a removed or unknown provider id is found.
+if (Object.prototype.hasOwnProperty.call(savedSettings || {}, 'activeProvider')
+  && savedSettings.activeProvider !== savedActiveProvider) persistAiSettings();
+
+function hasCustomAiConfig() { return customConfigReady(state.settings); }
+function aiConnection() {
+  return activeConnectionState({
+    activeProvider: state.ai.activeProvider,
+    customReady: hasCustomAiConfig(),
+    customError: state.ai.customError,
+    pollinationsStatus: state.ai.pollinationsStatus,
+  });
+}
+function hasAiConfig() {
+  const connection = aiConnection();
+  return connection === AI_CONNECTION.CUSTOM_CONNECTED || connection === AI_CONNECTION.POLLINATIONS_CONNECTED;
+}
+function persistAiSettings() {
+  try {
+    localStorage.setItem('git-up-settings', JSON.stringify({
+      baseUrl: state.settings.baseUrl,
+      endpoint: state.settings.endpoint,
+      model: state.settings.model,
+      modelOptions: state.modelOptions,
+      activeProvider: state.ai.activeProvider,
+    }));
+  } catch { /* storage can be disabled without breaking the current session */ }
+}
+function providerSummary() {
+  if (state.ai.activeProvider === AI_PROVIDER.POLLINATIONS) {
+    return state.ai.pollinationsStatus === AI_CONNECTION.POLLINATIONS_CONNECTED ? 'AI review via Git-Up Free AI' : 'Git-Up Free AI selected (authorization required)';
+  }
+  return hasCustomAiConfig() ? `AI review via configured provider (model ${state.settings.model || 'unknown'})` : 'heuristic fallback (no AI configured)';
+}
+const FREE_AI_AUTH_REQUIRED_CODES = new Set([
+  'auth-required',
+  'auth-expired',
+  'authorization-cancelled',
+  'authorization-denied',
+  'authorization-expired',
+]);
+async function generateAI(operation, payload, onProgress = () => {}) {
+  const provider = state.ai.activeProvider;
+  try {
+    const result = await aiService.generate({ provider, operation, payload, config: state.settings, onProgress });
+    if (provider === AI_PROVIDER.POLLINATIONS) state.ai.pollinationsStatus = AI_CONNECTION.POLLINATIONS_CONNECTED;
+    else state.ai.customError = false;
+    return result;
+  } catch (error) {
+    if (provider === AI_PROVIDER.POLLINATIONS) {
+      state.ai.pollinationsStatus = FREE_AI_AUTH_REQUIRED_CODES.has(error?.code)
+        ? AI_CONNECTION.POLLINATIONS_AUTH_REQUIRED
+        : AI_CONNECTION.POLLINATIONS_ERROR;
+      console.error('Git-Up Free AI request failed', { code: error?.code || 'request-failed', type: error?.name || 'Error' });
+      throw new Error(`Free AI: ${aiService.freeAiMessage(error)}`);
+    }
+    throw error;
+  }
+}
 function sourceLabel() { return state.guide?.source === 'ai' ? 'AI reviewed' : 'Local scan'; }
 function showToast(message, type = 'success') {
   state.toast = { message, type };
@@ -136,6 +166,7 @@ function errorKindOf(message) {
   const text = String(message || '');
   if (/rate limit/i.test(text)) return { title: 'GitHub rate limit reached', hint: 'Add a server GitHub token, or wait an hour. File-name evidence is still usable.' };
   if (/private|not found/i.test(text)) return { title: 'Repository not found or private', hint: 'Git-Up scans public repositories. Check the owner and name, or make the repo public first.' };
+  if (/Free AI/i.test(text)) return { title: 'Free AI is unavailable', hint: 'Retry, reconnect Pollinations, or choose Custom API from AI settings. Git-Up will not switch providers without you.' };
   if (/AI provider|model|endpoint|base URL|key/i.test(text)) return { title: 'AI provider hiccup', hint: 'The heuristic guide still works with no key. Check the provider settings and retry.' };
   if (/URL|github\.com|owner/i.test(text)) return { title: 'Check the repository URL', hint: 'HTTPS, SSH, and git@ forms all work, for example https://github.com/owner/repo.' };
   if (/network|fetch|failed/i.test(text)) return { title: 'Network problem', hint: 'Check your connection and try again. Recent analyses are kept in history.' };
@@ -143,7 +174,7 @@ function errorKindOf(message) {
 }
 
 function topbar() {
-  const aiReady = hasAiConfig();
+  const connection = connectionPresentation(aiConnection());
   const toLight = state.theme !== 'light';
   return `<header class="topbar">
     <div id="topbar-contrib" aria-hidden="true"></div>
@@ -156,10 +187,10 @@ function topbar() {
     </a>
     <div class="topbar-center"><span>Route</span><span class="slash">/</span><strong>${state.mode === 'analysis' ? esc(displayName({ label: '', name: shortName(state.guide) })) : 'New analysis'}</strong></div>
     <div class="topbar-actions">
-      <div class="connection-pill"><i class="status-dot ${aiReady ? 'online' : ''}"></i><span>${aiReady ? 'AI connected' : 'Local scan ready'}</span></div>
-      <button class="icon-button" data-action="palette" aria-label="Open command menu (Ctrl K)" title="Command menu (Ctrl K)">${icon('search', 18)}</button>
+      <button type="button" class="connection-pill" data-action="settings" aria-label="AI status: ${esc(connection.label)}. Open AI settings"><i class="status-dot ${connection.tone}" aria-hidden="true"></i><span>${esc(connection.label)}</span></button>
+      <button class="icon-button" data-action="palette" aria-label="Open command menu (Ctrl K)" title="Command menu (Ctrl K)">${icon('command', 18)}</button>
       <button class="icon-button" data-action="theme" aria-label="${toLight ? 'Switch to daylight mode' : 'Switch to dark mode'}" title="${toLight ? 'Daylight mode' : 'Dark mode'}">${icon(toLight ? 'sun' : 'moon', 18)}</button>
-      <button class="icon-button" data-action="settings" aria-label="Open AI settings" title="AI settings">${icon('settings', 18)}</button>
+      <button class="icon-button" data-action="settings" aria-label="Open AI settings" title="AI settings">${icon('aiSettings', 18)}</button>
     </div>
   </header>`;
 }
@@ -233,7 +264,7 @@ function fileTreePanel() {
   return `<div class="side-section" id="route-files">
     <div class="side-section-head"><p class="sidebar-label">Files</p><span class="side-count">${paths.length}</span></div>
     <input class="tree-filter" id="tree-filter" placeholder="Filter files…" value="${esc(state.treeFilter)}" aria-label="Filter file tree" />
-    <div class="file-tree" role="tree" aria-label="Repository file tree">${treeNodeHtml(tree)}</div>
+    <div class="file-tree" role="region" aria-label="Repository file tree">${treeNodeHtml(tree)}</div>
     ${!paths.length ? '<div class="history-empty">No file listing available for this analysis.</div>' : `<div class="tree-foot">${topCounts} top-level ${topCounts === 1 ? 'entry' : 'entries'} · click a folder to expand</div>`}
   </div>`;
 }
@@ -245,33 +276,33 @@ function sidebar() {
     const renaming = state.renamingId === entry.id;
     if (renaming) {
       return `<div class="history-entry renaming ${isActive ? 'active' : ''}">
-        <span class="history-icon">${icon('clock', 14)}</span>
+        <span class="history-icon">${icon('history', 14)}</span>
         <input class="rename-input" id="rename-input" value="${esc(state.renameDraft)}" maxlength="60" aria-label="Rename repository label" />
         <button class="mini-btn save" data-action="history-rename-save" data-id="${esc(entry.id)}" title="Save label" aria-label="Save label">${icon('check', 12)}</button>
         <button class="mini-btn" data-action="history-rename-cancel" title="Cancel" aria-label="Cancel rename">${icon('close', 12)}</button>
       </div>`;
     }
     return `<div class="history-row ${isActive ? 'active' : ''}">
-      <button class="history-entry" data-history-id="${esc(entry.id)}" title="${esc(entry.url)}"><span class="history-icon">${icon('clock', 14)}</span><span class="history-name">${esc(displayName(entry))}</span>${entry.label ? `<span class="history-sub">${esc(entry.name || entry.url)}</span>` : ''}</button>
+      <button class="history-entry" data-history-id="${esc(entry.id)}" title="${esc(entry.url)}"><span class="history-icon">${icon('history', 14)}</span><span class="history-name">${esc(displayName(entry))}</span>${entry.label ? `<span class="history-sub">${esc(entry.name || entry.url)}</span>` : ''}</button>
       <div class="menu-wrap">
         <button class="dots-button" data-action="history-menu" data-id="${esc(entry.id)}" aria-label="Repository actions for ${esc(displayName(entry))}" aria-haspopup="menu" aria-expanded="${menuOpen}">${icon('dots', 15)}</button>
         ${menuOpen ? `<div class="menu-pop" role="menu">
-          <button class="menu-item" data-action="history-rename" data-id="${esc(entry.id)}" role="menuitem">${icon('pencil', 13)}<span>Rename</span></button>
+          <button class="menu-item" data-action="history-rename" data-id="${esc(entry.id)}" role="menuitem">${icon('edit', 13)}<span>Rename</span></button>
           <button class="menu-item danger" data-action="history-delete" data-id="${esc(entry.id)}" role="menuitem">${icon('trash', 13)}<span>Remove</span></button>
         </div>` : ''}
       </div>
     </div>`;
   }).join('') : '<div class="history-empty">Your analyzed repositories will appear here. Hover any entry for rename / remove.</div>';
   return `<aside class="sidebar" aria-label="Workspace">
-    <button class="new-analysis" data-action="new-analysis">${icon('plus', 16)}<span>New analysis</span></button>
+    <button class="new-analysis" data-action="new-analysis">${icon('add', 16)}<span>New analysis</span></button>
     <p class="sidebar-label">Workspace</p>
     <nav class="sidebar-nav" aria-label="Workspace navigation">
-      <button class="nav-item active" data-action="new-analysis"><span class="nav-icon">${icon('grid', 16)}</span><span>Analyses</span><span class="nav-count">${state.history.length || '—'}</span></button>
-      <button class="nav-item" data-action="settings"><span class="nav-icon">${icon('settings', 16)}</span><span>AI provider</span></button>
+      <button class="nav-item active" data-action="new-analysis"><span class="nav-icon">${icon('dashboard', 16)}</span><span>Analyses</span><span class="nav-count">${state.history.length || '—'}</span></button>
+      <button class="nav-item" data-action="settings"><span class="nav-icon">${icon('aiSettings', 16)}</span><span>AI provider</span></button>
     </nav>
     <div class="history" id="route-history"><p class="sidebar-label">Recent</p><div class="history-list">${historyHtml}</div></div>
     ${fileTreePanel()}
-    <div class="sidebar-foot"><div class="local-note"><strong>Private by default</strong>Your API key stays in this browser session. Repository files are only sent to your configured AI provider.</div></div>
+    <div class="sidebar-foot"><div class="local-note"><strong>Private by default</strong>Your Custom API key stays in this browser session. Repository files are only sent to the AI provider you choose.</div></div>
   </aside>`;
 }
 
@@ -279,10 +310,10 @@ function repoForm() {
   const kind = state.error ? errorKindOf(state.error) : null;
   return `<form class="repo-form" id="repo-form">
     <div class="repo-input-wrap">${icon('github', 17)}<input id="repo-input" class="repo-input" autocomplete="url" spellcheck="false" value="${esc(state.repoUrl)}" placeholder="https://github.com/owner/repository" aria-label="GitHub repository URL" required /></div>
-    <button class="analyze-button ${state.mode === 'loading' ? 'loading' : ''}" type="submit" ${state.mode === 'loading' ? 'disabled' : ''}>${state.mode === 'loading' ? `${icon('refresh', 15, 'spinner')}Scanning repository` : `${icon('route', 15)}Analyze repository`}</button>
+    <button class="analyze-button ${state.mode === 'loading' ? 'loading' : ''}" type="submit" ${state.mode === 'loading' ? 'disabled' : ''}>${state.mode === 'loading' ? `${icon('loader', 15, 'spinner')}Scanning repository` : `${icon('route', 15)}Analyze repository`}</button>
   </form>
   ${expertisePicker()}
-  <div class="form-meta"><span>${icon('github', 12)} Public repositories</span><span>${icon('key', 12)} SSH, HTTPS, and Git URLs</span><span>${icon('shield', 12)} Heuristic scan works with no AI key</span><span class="shortcut">⌘ ↵</span></div>
+  <div class="form-meta"><span>${icon('github', 12)} Public repositories</span><span>${icon('link', 12)} SSH, HTTPS, and Git URLs</span><span>${icon('shield', 12)} Heuristic scan works with no AI key</span><span class="shortcut">⌘ ↵</span></div>
   ${state.error ? `<div class="error-banner" role="alert">${icon('warning', 17)}<span><strong>${esc(kind.title)}.</strong> ${safe(state.error)}<br /><em>${esc(kind.hint)}</em></span></div>` : ''}`;
 }
 
@@ -398,7 +429,7 @@ function plainOverviewPanel() {
   return `<section class="panel plain-panel" aria-labelledby="plain-title" data-reveal>
     <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('chat', 15)}</div><div><h3 id="plain-title">In plain English</h3><p class="panel-subtitle">No jargon — share this with anyone, even if they have never opened a project before</p></div></div><span class="panel-count">for everyone</span></div>
     <div class="plain-body">
-      <div class="plain-analogy">${icon('spark', 14)}<span>${esc(overview.analogy || '')}</span></div>
+      <div class="plain-analogy">${icon('sparkles', 14)}<span>${esc(overview.analogy || '')}</span></div>
       <div class="plain-grid">
         <div class="plain-card"><div class="plain-kicker">What problem it solves</div><p>${esc(overview.problem || '')}</p></div>
         <div class="plain-card"><div class="plain-kicker">Who it helps</div><p>${esc(overview.audience || '')}</p></div>
@@ -411,8 +442,8 @@ function plainOverviewPanel() {
 // --- Oreo the cat bot: floating messenger chatbot ----------------------------
 // Replaces the old inline "Curious Explorer" section. The chat lives in a
 // fixed bottom-right container (see oreoHtml + styles.css) so it is available
-// on every view. Answers come from the existing /api/insight endpoint so no
-// new backend is required; messages render as sanitised standard markdown.
+// on every view. Answers use the central AI service so the active provider is
+// transparent to the chatbot; messages render as sanitised standard markdown.
 // The mascot is the remote Lottie robot animation, played with the
 // dotLottie player component (see the module script in index.html).
 const OREO_NAME = 'Oreo the cat bot';
@@ -917,7 +948,7 @@ function oreoSessionSnapshot() {
     snap.activeStep = remaining[0] || null;
     snap.completedSteps = completed;
     snap.remainingSteps = remaining.slice(1);
-    snap.provider = hasAiConfig() ? `AI review via configured provider (model ${state.settings.model || 'unknown'})` : 'heuristic fallback (no AI configured)';
+    snap.provider = providerSummary();
     if (guide.contract?.contractId) snap.contractId = guide.contract.contractId;
     if (guide.contract?.verification) snap.verification = guide.contract.verification;
     const lastFailure = state.failures[state.failures.length - 1];
@@ -943,15 +974,8 @@ async function sendOreoMessage(raw) {
       pushOreo('bot', `Ooo good question! 🤩 First, toss a GitHub repo link in the box above, and I\'ll sniff it out like a treat! 🦴🐾\n\nAbout **${esc(text).slice(0, 120)}**:\n- Any public \`github.com/owner/repo\` link works! 🔗\n- No API key needed for the quick sniff! 🆓\n- Then come back and I\'ll cheer you through every step! 📣`);
       state.chat.suggestions = [...OREO_QUICK];
     } else {
-      const config = hasAiConfig() ? { ...state.settings } : null;
-      const response = await fetch('/api/insight', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl: state.repoUrl, mode: 'custom', question: text, baseMode: 'recommendations', config, session: oreoSessionSnapshot() }),
-      });
-      const payload = await response.json();
-      if (!response.ok || !payload.ok) throw new Error(payload.error || 'The chat could not answer right now.');
-      const { md, followUps } = insightToMarkdown(payload.insight);
+      const insight = await generateAI('insight', { repoUrl: state.repoUrl, mode: 'custom', question: text, baseMode: 'recommendations', session: oreoSessionSnapshot() });
+      const { md, followUps } = insightToMarkdown(insight);
       pushOreo('bot', md);
       state.chat.suggestions = followUps.length ? followUps : [...OREO_QUICK];
     }
@@ -1019,8 +1043,8 @@ function oreoHtml() {
 function routeNav() {
   return `<nav class="route-nav" aria-label="Result sections">
     <a href="#route-path">${icon('route', 12)} Path</a>
-    <a href="#route-failures">${icon('warning', 12)} Failures</a>
-    <a href="#route-graph">${icon('grid', 12)} Graph</a>
+    <a href="#route-failures">${icon('bug', 12)} Failures</a>
+    <a href="#route-graph">${icon('graph', 12)} Graph</a>
     <a href="#route-contract">${icon('shield', 12)} Contract</a>
     <a href="#route-evidence">${icon('book', 12)} Evidence</a>
   </nav>`;
@@ -1057,7 +1081,7 @@ function analysisView() {
           <div class="analysis-meta"><span class="tag ${guide.source === 'ai' ? 'ai' : 'scan'}"><i class="tag-dot"></i>${sourceLabel()}</span><span class="tag">${esc(guide.confidence || 'medium')} confidence</span><span class="tag">${formatDate(guide.analyzedAt)}</span></div>
         </div>
       </div>
-      <div class="analysis-actions">${expertiseSwitch()}<button class="secondary-button" data-action="new-analysis">${icon('plus', 14)} New</button><button class="install-button" data-action="install">${icon('terminal', 14)} Generate install script</button></div>
+      <div class="analysis-actions">${expertiseSwitch()}<button class="secondary-button" data-action="new-analysis">${icon('add', 14)} New</button><button class="install-button" data-action="install">${icon('terminal', 14)} Generate install script</button></div>
     </div>
     ${routeNav()}
     ${resumeBanner()}
@@ -1073,17 +1097,55 @@ function analysisView() {
     ${plainOverviewPanel()}
     <div class="dashboard-grid" id="route-evidence" data-reveal>
       <div class="primary-stack">
-        <div class="info-grid"><section class="panel info-panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('layers', 15)}</div><div><h3>Dependencies</h3><p class="panel-subtitle">Installed as part of this repository</p></div></div><span class="panel-count">${guide.dependencies?.length || 0}</span></div><div class="info-list">${dependencyList(guide.dependencies)}</div></section><section class="panel info-panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('key', 15)}</div><div><h3>Requirements</h3><p class="panel-subtitle">Needed before the app can work</p></div></div><span class="panel-count">${guide.requirements?.length || 0}</span></div><div class="info-list">${requirementsList(guide.requirements)}</div></section></div>
-        ${guide.notes?.length ? `<section class="panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('book', 15)}</div><div><h3>Notes from the scan</h3><p class="panel-subtitle">Keep these caveats close while you set up</p></div></div></div><div class="info-list">${guide.notes.map((note) => `<div class="info-item"><span class="info-bullet"></span><span>${esc(note)}</span></div>`).join('')}</div></section>` : ''}
+        <div class="info-grid"><section class="panel info-panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('packages', 15)}</div><div><h3>Dependencies</h3><p class="panel-subtitle">Installed as part of this repository</p></div></div><span class="panel-count">${guide.dependencies?.length || 0}</span></div><div class="info-list">${dependencyList(guide.dependencies)}</div></section><section class="panel info-panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('requirements', 15)}</div><div><h3>Requirements</h3><p class="panel-subtitle">Needed before the app can work</p></div></div><span class="panel-count">${guide.requirements?.length || 0}</span></div><div class="info-list">${requirementsList(guide.requirements)}</div></section></div>
+        ${guide.notes?.length ? `<section class="panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('notes', 15)}</div><div><h3>Notes from the scan</h3><p class="panel-subtitle">Keep these caveats close while you set up</p></div></div></div><div class="info-list">${guide.notes.map((note) => `<div class="info-item"><span class="info-bullet"></span><span>${esc(note)}</span></div>`).join('')}</div></section>` : ''}
       </div>
-      <div class="sticky-column"><section class="panel explanation-panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('info', 15)}</div><div><h3>Explanation</h3><p class="panel-subtitle">Understand the why, without cluttering the checklist</p></div></div></div><div class="explanation-content"><label class="explanation-step-label" for="explanation-select">Selected step</label><select class="explanation-select" id="explanation-select">${steps.map((item, index) => `<option value="${index}" ${index === state.explanationIndex ? 'selected' : ''}>${String(index + 1).padStart(2, '0')} · ${esc(item.title)}</option>`).join('')}</select><h4>${esc(explanation.title || step?.title || 'Installation step')}</h4><p>${esc(explanation.body || step?.detail || '')}</p>${guide.environment?.length ? `<div class="explanation-tip">${icon('key', 14)}<span>Environment detected: <strong>${guide.environment.map(esc).join(', ')}</strong>. Keep secrets out of Git.</span></div>` : `<div class="explanation-tip">${icon('info', 14)}<span>Commands are shown for your terminal. Git-Up never executes code on your machine.</span></div>`}</div></section>${files.length ? `<section class="panel files-panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('book', 15)}</div><div><h3>Inspected files</h3><p class="panel-subtitle">The setup evidence behind this guide</p></div></div></div><div class="file-list">${files.map((file) => `<span class="file-chip" title="${esc(file)}">${esc(file)}</span>`).join('')}</div></section>` : ''}</div>
+      <div class="sticky-column"><section class="panel explanation-panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('info', 15)}</div><div><h3>Explanation</h3><p class="panel-subtitle">Understand the why, without cluttering the checklist</p></div></div></div><div class="explanation-content"><label class="explanation-step-label" for="explanation-select">Selected step</label><select class="explanation-select" id="explanation-select">${steps.map((item, index) => `<option value="${index}" ${index === state.explanationIndex ? 'selected' : ''}>${String(index + 1).padStart(2, '0')} · ${esc(item.title)}</option>`).join('')}</select><h4>${esc(explanation.title || step?.title || 'Installation step')}</h4><p>${esc(explanation.body || step?.detail || '')}</p>${guide.environment?.length ? `<div class="explanation-tip">${icon('key', 14)}<span>Environment detected: <strong>${guide.environment.map(esc).join(', ')}</strong>. Keep secrets out of Git.</span></div>` : `<div class="explanation-tip">${icon('info', 14)}<span>Commands are shown for your terminal. Git-Up never executes code on your machine.</span></div>`}</div></section>${files.length ? `<section class="panel files-panel"><div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('fileSearch', 15)}</div><div><h3>Inspected files</h3><p class="panel-subtitle">The setup evidence behind this guide</p></div></div></div><div class="file-list">${files.map((file) => `<span class="file-chip" title="${esc(file)}">${esc(file)}</span>`).join('')}</div></section>` : ''}</div>
     </div>
   </section>`;
 }
 
 function settingsModal() {
+  const provider = state.ai.activeProvider;
   const models = [...new Set([...(state.modelOptions || []), state.settings.model].filter(Boolean))];
-  return `<div class="modal-layer" data-action="close-on-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div class="modal-head"><div><h2 id="settings-title">AI provider</h2><p>Connect an OpenAI-compatible endpoint for a deeper repository review. AI is optional: the heuristic scan stays fully usable without it. Keys remain in this browser session.</p></div><button class="icon-button" data-action="close-modal" aria-label="Close settings">${icon('close', 18)}</button></div><form class="modal-body" id="settings-form"><div class="inline-fields"><div class="form-field"><label for="base-url">Base URL <span>required</span></label><input class="text-field" id="base-url" value="${esc(state.settings.baseUrl)}" placeholder="https://api.openai.com/v1" /></div><div class="form-field"><label for="endpoint">Chat endpoint <span>required</span></label><input class="text-field" id="endpoint" value="${esc(state.settings.endpoint)}" placeholder="/chat/completions" /></div></div><div class="form-field"><label for="api-key">API key <span>session only</span></label><div class="secret-field"><input class="text-field" id="api-key" type="${state.secretVisible ? 'text' : 'password'}" value="${esc(state.settings.apiKey)}" placeholder="sk-…" autocomplete="off" /> <button class="reveal-key" type="button" data-action="toggle-key" aria-label="${state.secretVisible ? 'Hide' : 'Show'} API key">${icon(state.secretVisible ? 'eyeOff' : 'eye', 15)}</button></div><p class="field-hint">Used only for requests from this session. It is never saved to the server or included in a repository guide.</p></div><div class="form-field"><label for="model">Model <span>${models.length ? `${models.length} available` : 'fetch from provider'}</span></label><div class="model-row"><select class="select-field" id="model"><option value="">Select a model…</option>${models.map((model) => `<option value="${esc(model)}" ${model === state.settings.model ? 'selected' : ''}>${esc(model)}</option>`).join('')}</select><button type="button" class="fetch-button" data-action="fetch-models">${icon('refresh', 13)} Fetch models</button></div><p class="field-hint">Git-Up requests <span class="mono">GET /models</span> from your base URL. Your provider may use a different models endpoint.</p></div><div id="settings-status" class="settings-status" aria-live="polite"></div><div class="modal-foot"><button type="button" class="secondary-button" data-action="close-modal">Cancel</button><button class="install-button" type="submit">${icon('check', 14)} Save configuration</button></div></form></section></div>`;
+  const providerPicker = `<fieldset class="provider-picker"><legend>AI provider</legend><div class="provider-options">
+    <label class="provider-option ${provider === AI_PROVIDER.CUSTOM ? 'selected' : ''}"><input type="radio" name="ai-provider" value="${AI_PROVIDER.CUSTOM}" ${provider === AI_PROVIDER.CUSTOM ? 'checked' : ''} /><span><strong>Custom API</strong><small>Use your own OpenAI-compatible endpoint.</small></span></label>
+    <label class="provider-option ${provider === AI_PROVIDER.POLLINATIONS ? 'selected' : ''}"><input type="radio" name="ai-provider" value="${AI_PROVIDER.POLLINATIONS}" ${provider === AI_PROVIDER.POLLINATIONS ? 'checked' : ''} /><span><strong>Git-Up Free</strong><small>No key to paste. Authorize this session with Pollinations.</small></span></label>
+  </div></fieldset>`;
+  const head = `<div class="modal-head"><div><h2 id="settings-title">AI provider</h2><p>Choose how Git-Up performs deeper repository reviews. Your Custom API values stay intact when you use Free AI.</p></div><button class="icon-button" data-action="close-modal" aria-label="Close settings">${icon('close', 18)}</button></div>`;
+
+  if (provider === AI_PROVIDER.CUSTOM) {
+    return `<div class="modal-layer" data-action="close-on-backdrop"><section class="modal ai-settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">${head}<form class="modal-body" id="settings-form">${providerPicker}<div class="provider-panel" aria-label="Custom API settings"><div class="inline-fields"><div class="form-field"><label for="base-url">Base URL <span>required</span></label><input class="text-field" id="base-url" value="${esc(state.settings.baseUrl)}" placeholder="https://api.openai.com/v1" /></div><div class="form-field"><label for="endpoint">Chat endpoint <span>required</span></label><input class="text-field" id="endpoint" value="${esc(state.settings.endpoint)}" placeholder="/chat/completions" /></div></div><div class="form-field"><label for="api-key">API key <span>session only</span></label><div class="secret-field"><input class="text-field" id="api-key" type="${state.secretVisible ? 'text' : 'password'}" value="${esc(state.settings.apiKey)}" placeholder="sk-…" autocomplete="off" /> <button class="reveal-key" type="button" data-action="toggle-key" aria-label="${state.secretVisible ? 'Hide' : 'Show'} API key">${icon(state.secretVisible ? 'eyeOff' : 'eye', 15)}</button></div><p class="field-hint">Used only for requests from this session. It is never saved to the server or included in a repository guide.</p></div><aside class="free-ai-cta"><div><strong>Don’t have your own API?</strong><p>No problem — Git-Up has a free AI option.</p></div><button type="button" class="secondary-button" data-action="use-free-ai">Try Free AI ${icon('arrow', 13)}</button></aside><div class="form-field"><label for="model">Model <span>${models.length ? `${models.length} available` : 'fetch from provider'}</span></label><div class="model-row"><select class="select-field" id="model"><option value="">Select a model…</option>${models.map((model) => `<option value="${esc(model)}" ${model === state.settings.model ? 'selected' : ''}>${esc(model)}</option>`).join('')}</select><button type="button" class="fetch-button" data-action="fetch-models">${icon('refresh', 13)} Fetch models</button></div><p class="field-hint">Git-Up requests <span class="mono">GET /models</span> from your base URL. Your provider may use a different models endpoint.</p></div><div id="settings-status" class="settings-status ${state.ai.customError ? 'bad' : ''}" aria-live="polite">${state.ai.customError ? 'Custom API connection failed. Check your settings and try again.' : ''}</div></div><div class="modal-foot"><button type="button" class="secondary-button" data-action="close-modal">Cancel</button><button class="install-button" type="submit">${icon('check', 14)} Save configuration</button></div></form></section></div>`;
+  }
+
+  const pollinationsStatus = state.ai.pollinationsStatus;
+  const connected = pollinationsStatus === AI_CONNECTION.POLLINATIONS_CONNECTED;
+  const connecting = state.ai.busy === 'connect';
+  const testing = state.ai.busy === 'test';
+  const busy = Boolean(state.ai.busy);
+  const failed = pollinationsStatus === AI_CONNECTION.POLLINATIONS_ERROR;
+  const authorization = connecting ? state.ai.authorization : null;
+  const statusCopy = connecting
+    ? (authorization
+      ? `Waiting for Pollinations approval for code ${authorization.userCode}…`
+      : 'Requesting a Pollinations authorization code…')
+    : testing
+      ? 'Sending a small Pollinations test request…'
+      : state.ai.message || (connected
+        ? 'Free AI Connected — you’re ready to use Git-Up’s AI features.'
+        : failed
+          ? 'Free AI connection failed. Please reconnect and try again.'
+          : 'Free AI is not connected. Authorize Pollinations to continue.');
+  const statusClass = connected && !failed ? 'good' : failed ? 'bad' : '';
+  const authorizationPanel = authorization
+    ? `<div class="free-ai-authorization" aria-label="Pollinations authorization"><span>Authorization code</span><strong class="authorization-code">${esc(authorization.userCode)}</strong><p>Open Pollinations, confirm this code, then return here. Git-Up will finish connecting automatically; the code expires on its own.</p></div>`
+    : '';
+  const actions = connected
+    ? `<button type="button" class="secondary-button" data-action="test-free-ai" ${busy ? 'disabled' : ''}>${testing ? `${icon('loader', 13, 'spinner')} Testing Free AI…` : `${icon('sparkles', 13)} Test AI`}</button><button type="button" class="secondary-button danger-button" data-action="disconnect-free-ai" ${busy ? 'disabled' : ''}>Disconnect</button>`
+    : connecting
+      ? `${authorization ? `<a class="install-button" href="${esc(authorization.verificationUri)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Open Pollinations ${icon('external', 13)}</a><button type="button" class="secondary-button" data-copy="${esc(authorization.userCode)}">${icon('copy', 13)} Copy code</button>` : ''}<button type="button" class="secondary-button danger-button" data-action="cancel-free-ai-connect">Cancel</button>`
+      : `<button type="button" class="install-button" data-action="connect-free-ai">${icon('sparkles', 13)} ${failed ? 'Retry Free AI' : 'Authorize Pollinations'}</button>${failed ? '<button type="button" class="secondary-button danger-button" data-action="disconnect-free-ai">Disconnect</button>' : ''}${failed && hasCustomAiConfig() ? '<button type="button" class="secondary-button" data-action="use-custom-ai">Use Custom API</button>' : ''}`;
+  return `<div class="modal-layer" data-action="close-on-backdrop"><section class="modal ai-settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">${head}<div class="modal-body">${providerPicker}<section class="free-ai-card" aria-labelledby="free-ai-title"><div class="free-ai-heading"><span class="free-ai-mark">${icon('sparkles', 18)}</span><div><h3 id="free-ai-title">Git-Up Free AI</h3><p>Use AI without pasting or configuring an API key.</p></div></div><div class="free-ai-model"><span>Pollinations model</span><strong>${esc(POLLINATIONS_DEFAULT_MODEL)}</strong></div><div class="free-ai-status ${statusClass}" role="status" aria-live="polite"><i class="status-dot ${connected ? 'online' : failed ? 'warning' : connecting ? 'pending' : ''}" aria-hidden="true"></i><span>${esc(statusCopy)}</span></div>${authorizationPanel}<div class="free-ai-actions">${actions}</div><p class="free-ai-credit">Powered by Pollinations. Your delegated authorization stays in this browser session and is sent only to Pollinations. Usage may consume Pollen; <a href="https://enter.pollinations.ai" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">manage your Pollinations account</a>.</p></section><div class="modal-foot"><button type="button" class="secondary-button" data-action="close-modal">Close</button></div></div></section></div>`;
 }
 function installModal() {
   return `<div class="modal-layer" data-action="close-on-backdrop"><section class="modal script-modal" role="dialog" aria-modal="true" aria-labelledby="install-title"><div class="modal-head"><div><h2 id="install-title">Your install script</h2><p>Review these commands, then run them in your own terminal. Nothing runs automatically.</p></div><button class="icon-button" data-action="close-modal" aria-label="Close install script">${icon('close', 18)}</button></div><div class="modal-body" aria-live="polite"><p class="script-copy-note">This is the same order as your checklist. If the repository requires secrets, fill those in locally before running the script.</p><div class="script-block"><button class="copy-mini script-copy" data-copy="${esc(installScript())}" aria-label="Copy install script" title="Copy install script">${icon('copy', 13)}<span>Copy</span></button>${esc(installScript())}</div><div class="modal-foot"><button class="secondary-button" data-action="close-modal">Close</button><button class="install-button" data-copy="${esc(installScript())}">${icon('copy', 14)} Copy script</button></div></div></section></div>`;
@@ -1091,10 +1153,10 @@ function installModal() {
 function resumeBanner() {
   if (!state.resumeNote) return '';
   const note = state.resumeNote;
-  return `<div class="resume-note">${icon('clock', 13)}<span>${esc(note)}</span><button class="link-button" data-action="resume-dismiss">Dismiss</button></div>`;
+  return `<div class="resume-note">${icon('history', 13)}<span>${esc(note)}</span><button class="link-button" data-action="resume-dismiss">Dismiss</button></div>`;
 }
 
-function toastHtml() { return state.toast ? `<div class="toast ${state.toast.type}" role="status">${icon(state.toast.type === 'error' ? 'warning' : 'check', 15)}<span>${esc(state.toast.message)}</span></div>` : ''; }
+function toastHtml() { return state.toast ? `<div class="toast ${state.toast.type}" role="status">${icon(state.toast.type === 'error' ? 'warning' : 'checkCircle', 15)}<span>${esc(state.toast.message)}</span></div>` : ''; }
 
 // ===========================================================================
 // Git-Up v2 feature layer
@@ -1224,13 +1286,13 @@ function healthPanel() {
     </div>`).join('');
   const evidence = health.evidence || {};
   return `<section class="panel health-panel" aria-labelledby="health-title" data-reveal>
-    <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('shield', 15)}</div><div><h3 id="health-title">Install health</h3><p class="panel-subtitle">Scored from repository evidence before any steps are shown — ${esc(health.method)}</p></div></div><span class="panel-count">weight disclosed</span></div>
+    <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('health', 15)}</div><div><h3 id="health-title">Install health</h3><p class="panel-subtitle">Scored from repository evidence before any steps are shown — ${esc(health.method)}</p></div></div><span class="panel-count">weight disclosed</span></div>
     <div class="health-body">
       <div class="health-score">${scoreRing(health.score, health.band.tone)}<div class="health-band tone-${health.band.tone}"><strong>${esc(health.band.label)}</strong><span>${esc(health.band.note)}</span></div></div>
       <div class="health-factors">${bars}</div>
     </div>
     ${health.caps?.length ? `<div class="health-caps">${health.caps.map((cap) => `<div class="cap-item">${icon('warning', 13)}<span>${esc(cap)}</span></div>`).join('')}</div>` : ''}
-    <div class="health-foot"><span>${icon('clock', 12)} pushed ${evidence.ageDays === null || evidence.ageDays === undefined ? 'unknown' : `${evidence.ageDays}d ago`}</span><span>${icon('chat', 12)} ${evidence.threadsSampled || 0} threads sampled</span><span>${icon('warning', 12)} ${evidence.openIssues || 0} open issues</span><span>${icon('refresh', 12)} branch ${esc(evidence.branch || 'main')}: ${esc(evidence.ci?.state || 'no-ci')}</span><span class="mono">${esc(health.method)}</span></div>
+    <div class="health-foot"><span>${icon('clock', 12)} pushed ${evidence.ageDays === null || evidence.ageDays === undefined ? 'unknown' : `${evidence.ageDays}d ago`}</span><span>${icon('messages', 12)} ${evidence.threadsSampled || 0} threads sampled</span><span>${icon('bug', 12)} ${evidence.openIssues || 0} open issues</span><span>${icon('graph', 12)} branch ${esc(evidence.branch || 'main')}: ${esc(evidence.ci?.state || 'no-ci')}</span><span class="mono">${esc(health.method)}</span></div>
   </section>`;
 }
 
@@ -1278,9 +1340,9 @@ function failureFirstPanel() {
     </article>`;
   }).join('');
   return `<section class="panel fail-panel" id="route-failures" aria-labelledby="fail-title" data-reveal>
-    <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('warning', 15)}</div><div><h3 id="fail-title">How this install usually breaks</h3><p class="panel-subtitle">Read before the steps — ranked by what ${esc(scan.totalThreads || 0)} recent ${scan.totalThreads === 1 ? 'thread' : 'threads'} actually say</p></div></div><span class="panel-count">${patterns.length} found</span></div>
+    <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('bug', 15)}</div><div><h3 id="fail-title">How this install usually breaks</h3><p class="panel-subtitle">Read before the steps — ranked by what ${esc(scan.totalThreads || 0)} recent ${scan.totalThreads === 1 ? 'thread' : 'threads'} actually say</p></div></div><span class="panel-count">${patterns.length} found</span></div>
     ${signatureStrip(patterns)}
-    ${patterns.length ? `<div class="fail-list" data-reveal-stagger>${rows}</div>` : `<div class="fail-empty">${icon('check', 15)}<span>${esc(scan.notice || 'No installation failures were found in the recent threads.')}</span></div>`}
+    ${patterns.length ? `<div class="fail-list" data-reveal-stagger>${rows}</div>` : `<div class="fail-empty">${icon('checkCircle', 15)}<span>${esc(scan.notice || 'No installation failures were found in the recent threads.')}</span></div>`}
     <div class="fail-foot"><span>sampled ${scan.sampled?.issues || 0} issues · ${scan.sampled?.pulls || 0} pull requests${scan.sampled?.discussions ? ` · ${scan.sampled.discussions} discussions` : ''}</span>${scan.sources?.discussions === 'none' ? '<span>discussions need a server GitHub token (GraphQL only)</span>' : ''}</div>
     ${scan.notice ? `<p class="field-hint fail-notice">${esc(scan.notice)}</p>` : ''}
   </section>`;
@@ -1353,7 +1415,7 @@ function pathGraphPanel() {
   const pills = steps.map((entry, index) => `<span class="path-pill ${state.checked[keyOf(entry)] ? 'done' : ''}">${String(index + 1).padStart(2, '0')} ${esc(entry.title)}</span>`).join('');
   const label = selectionsLabel(graph.axes, state.pathSelections);
   return `<section class="panel graph-panel" id="route-graph" aria-labelledby="graph-title" data-reveal>
-    <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('grid', 15)}</div><div><h3 id="graph-title">Choose your path</h3><p class="panel-subtitle">${esc(graph.note || 'Pick a branch — only the relevant steps stay in the checklist.')}</p></div></div>${label ? `<span class="panel-count path-selection">${esc(label)}</span>` : ''}</div>
+    <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('graph', 15)}</div><div><h3 id="graph-title">Choose your path</h3><p class="panel-subtitle">${esc(graph.note || 'Pick a branch — only the relevant steps stay in the checklist.')}</p></div></div>${label ? `<span class="panel-count path-selection">${esc(label)}</span>` : ''}</div>
     ${graphSvg(graph.axes, state.pathSelections, steps.length)}
     ${graphAltSelects(graph)}
     <div class="graph-axis-labels">${graph.axes.map((axis) => `<div class="axis-label"><strong>${esc(axis.label)}</strong><span>${esc(axis.prompt)}</span></div>`).join('')}</div>
@@ -1367,7 +1429,7 @@ function pathGraphPanel() {
     return `<div class="graph-detail">${alerts.map((alert) => `<div class="graph-tradeoff ${alert.tone === 'warn' ? 'warn' : ''}">${icon(alert.tone === 'warn' ? 'warning' : 'info', 13)}<span>${esc(alert.text)}</span></div>`).join('')}</div>`;
   })()}
     <div class="path-pills"><span class="pills-label">${icon('list', 12)}${steps.length} steps on this branch</span>${pills}</div>
-    ${Object.keys(state.pathSelections).length ? `<div class="graph-foot"><button class="link-button" data-action="path-reset">${icon('refresh', 12)} Reset to the recommended path</button></div>` : ''}
+    ${Object.keys(state.pathSelections).length ? `<div class="graph-foot"><button class="link-button" data-action="path-reset">${icon('restore', 12)} Reset to the recommended path</button></div>` : ''}
   </section>`;
 }
 
@@ -1407,15 +1469,15 @@ function installStepsPanel() {
     const patched = (entry.patchedFor || []).map((id) => (state.guide?.failureScan?.patterns || []).find((pattern) => pattern.id === id)?.label).filter(Boolean);
     return `<article class="step-row ${isDone ? 'is-done' : ''} ${isFailed ? 'is-failed' : ''} ${entry.revision > 1 ? 'is-revised' : ''}">
       <div class="step-rail" aria-hidden="true"><span class="step-dot status-${status.code}">${status.code === 'done' ? icon('check', 11) : status.code === 'failed' ? icon('warning', 11) : ''}</span>${index < steps.length - 1 ? '<span class="step-line"></span>' : ''}</div>
-      <div class="step-number">${entry.revision > 1 ? icon('refresh', 13) : String(index + 1).padStart(2, '0')}</div>
+      <div class="step-number">${entry.revision > 1 ? icon('history', 13) : String(index + 1).padStart(2, '0')}</div>
       <div class="step-body">
         <h4 class="step-title"><span class="step-id mono">${esc(entry.id)}</span>${esc(entry.title)}${entry.revision > 1 ? '<span class="rev-badge">revised</span>' : ''}</h4>
         <p class="step-state">Status: ${status.label}${isDone && entry.revision > 1 ? ' · kept through revision' : ''}</p>
         ${entry.detail ? `<p class="step-detail">${esc(entry.detail)}</p>` : ''}
-        ${entry.guard ? `<p class="step-guard">${icon('shield', 12)}${esc(entry.guard)}</p>` : ''}
+        ${entry.guard ? `<p class="step-guard">${icon('shieldLock', 12)}${esc(entry.guard)}</p>` : ''}
         ${patched.length ? `<p class="step-patch">${icon('check', 12)}patched for: ${patched.map(esc).join(', ')}</p>` : ''}
         ${entry.command ? `<div class="command-block"><button class="copy-mini" data-copy="${esc(entry.command)}" aria-label="Copy command" title="Copy command">${icon('copy', 13)}<span>Copy</span></button>${esc(entry.command)}</div>` : ''}
-        ${entry.verify ? `<div class="command-block verify-block"><button class="copy-mini" data-copy="${esc(entry.verify)}" aria-label="Copy check" title="Copy check">${icon('check', 13)}<span>Copy</span></button>${esc(entry.verify)}</div>` : ''}
+        ${entry.verify ? `<div class="command-block verify-block">${icon('check', 13, 'verify-icon')}<button class="copy-mini" data-copy="${esc(entry.verify)}" aria-label="Copy check" title="Copy check">${icon('copy', 13)}<span>Copy</span></button>${esc(entry.verify)}</div>` : ''}
         <div class="step-actions">
           ${isDone ? `<button class="link-button" data-action="unfail" data-step="${esc(entry.id)}">Reopen</button>` : ''}
           <button class="fail-button" data-action="step-failed" data-step="${esc(entry.id)}">${icon('warning', 12)} This failed</button>
@@ -1434,7 +1496,7 @@ function installStepsPanel() {
       <span class="tempo-note">${icon('compass', 12)}${esc(profile.short)} · ${esc(profile.explanation === 'minimal' ? 'prose hidden, one copy-paste block available' : profile.explanation === 'full' ? 'every step explains why it exists' : 'one line of reasoning per step')}</span>
       ${state.guide?.fastPath ? `<button class="secondary-button" data-copy="${esc(state.guide.fastPath)}">${icon('copy', 13)} Copy whole path</button>` : ''}
       ${hidden ? `<button class="link-button" data-action="toggle-hidden-notes">${icon(state.showHiddenNotes ? 'eyeOff' : 'eye', 12)} ${state.showHiddenNotes ? 'Hide' : `Show ${hidden} quieter note${hidden === 1 ? '' : 's'}`}</button>` : ''}
-      ${revision > 1 ? `<button class="link-button" data-action="path-restore">${icon('refresh', 12)} Restore the original path</button>` : ''}
+      ${revision > 1 ? `<button class="link-button" data-action="path-restore">${icon('restore', 12)} Restore the original path</button>` : ''}
     </div>
   </section>`;
 }
@@ -1443,9 +1505,9 @@ function recoveryReport() {
   const recovery = state.recovery;
   if (!recovery) return '';
   const matched = (recovery.matched || []).map((entry) => `<li><strong>${esc(entry.label || entry.id)}</strong>${entry.hit ? `<code>${esc(String(entry.hit).slice(0, 80))}</code>` : ''}</li>`).join('');
-  const checks = (recovery.checks || []).map((check) => `<div class="command-block"><button class="copy-mini" data-copy="${esc(check)}" aria-label="Copy check" title="Copy check">${icon('check', 13)}<span>Copy</span></button>${esc(check)}</div>`).join('');
+  const checks = (recovery.checks || []).map((check) => `<div class="command-block"><button class="copy-mini" data-copy="${esc(check)}" aria-label="Copy check" title="Copy check">${icon('copy', 13)}<span>Copy</span></button>${esc(check)}</div>`).join('');
   return `<section class="panel recovery-panel" aria-labelledby="recovery-title" aria-live="polite">
-    <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('refresh', 15)}</div><div><h3 id="recovery-title">Recovery applied — revision ${Number(recovery.revision) || currentRevision()}</h3><p class="panel-subtitle">Completed steps are locked and untouched. Only the failing step forward was rewritten.</p></div></div><span class="panel-count">${esc(recovery.source === 'ai' ? 'AI diagnosis' : 'local rule match')} · ${esc(recovery.confidence || 'medium')} confidence</span></div>
+    <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('lifebuoy', 15)}</div><div><h3 id="recovery-title">Recovery applied — revision ${Number(recovery.revision) || currentRevision()}</h3><p class="panel-subtitle">Completed steps are locked and untouched. Only the failing step forward was rewritten.</p></div></div><span class="panel-count">${esc(recovery.source === 'ai' ? 'AI diagnosis' : 'local rule match')} · ${esc(recovery.confidence || 'medium')} confidence</span></div>
     <div class="recovery-body">
       <p class="recovery-diagnosis">${safe(recovery.diagnosis || 'The path was rebuilt from the fault forward.')}</p>
       ${recovery.secondSuspect ? `<p class="recovery-second">${safe(recovery.secondSuspect)}</p>` : ''}
@@ -1453,7 +1515,7 @@ function recoveryReport() {
       ${checks ? `<h4>Prove the fix landed</h4>${checks}` : ''}
       ${(recovery.followUps || []).length ? `<h4>Answer next</h4><ul class="recovery-list">${recovery.followUps.map((q) => `<li>${esc(q)}</li>`).join('')}</ul>` : ''}
       ${recovery.note ? `<p class="field-hint">${safe(recovery.note)}</p>` : ''}
-      <div class="recovery-actions"><button class="secondary-button" data-action="path-restore">${icon('refresh', 13)} Roll back this revision</button><button class="link-button" data-action="recovery-dismiss">Dismiss report</button></div>
+      <div class="recovery-actions"><button class="secondary-button" data-action="path-restore">${icon('restore', 13)} Roll back this revision</button><button class="link-button" data-action="recovery-dismiss">Dismiss report</button></div>
     </div>
   </section>`;
 }
@@ -1461,7 +1523,7 @@ function recoveryReport() {
 function revisionTrail() {
   if (!state.revisions.length) return '';
   return `<section class="panel rev-panel" aria-labelledby="rev-title">
-    <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('clock', 15)}</div><div><h3 id="rev-title">How this path changed</h3><p class="panel-subtitle">Every correction stays on the record — nothing is silently rewritten</p></div></div><span class="panel-count">${state.revisions.length} revision${state.revisions.length === 1 ? '' : 's'}</span></div>
+    <div class="panel-heading"><div class="panel-title-wrap"><div class="panel-icon">${icon('history', 15)}</div><div><h3 id="rev-title">How this path changed</h3><p class="panel-subtitle">Every correction stays on the record — nothing is silently rewritten</p></div></div><span class="panel-count">${state.revisions.length} revision${state.revisions.length === 1 ? '' : 's'}</span></div>
     <ol class="rev-list">${state.revisions.map((entry) => `<li class="rev-item">
       <div class="rev-marker">v${entry.revision}</div>
       <div class="rev-body"><h4>${esc(entry.failedStepTitle)} did not work</h4><p>${esc(entry.diagnosis)}</p>
@@ -1482,13 +1544,13 @@ function failureModal() {
     <form class="modal-body" id="failure-form">
       <label class="form-field" for="failure-error"><span class="field-label">Paste what the terminal said <em>helps most</em></span>
         <textarea id="failure-error" class="text-field failure-text" rows="7" spellcheck="false" placeholder="npm ERR! code ERESOLVE&#10;npm ERR! Could not resolve dependency tree…">${esc(state.failure.errorText)}</textarea>
-        <span class="field-hint">Kept on this machine and only sent to the AI endpoint you configured. Even one line usually matches a known signature. Keys that look like secrets are redacted from anything shown back.</span>
+        <span class="field-hint">Kept on this machine and only sent to your active AI provider when connected. Even one line usually matches a known signature. Keys that look like secrets are redacted from anything shown back.</span>
       </label>
       ${known.length ? `<div class="form-field"><span class="field-label">Or start from what this repo’s issues already show</span><div class="quick-picks">${known.map((pattern) => `<button type="button" class="quick-pick" data-failure-pick="${esc(pattern.why)}">${esc(pattern.label)}${pattern.count ? ` · ${pattern.count}` : ''}</button>`).join('')}</div></div>` : ''}
       <label class="form-field"><span class="field-label">What happened, in words (optional)</span><input id="failure-note" class="text-field" value="${esc(state.failure.note)}" placeholder="It printed a warning then exited" /></label>
-      <div class="fail-expect"><span>${icon('shield', 12)}</span><p>Your ${completedCount < 0 ? 0 : completedCount} completed step${completedCount === 1 ? '' : 's'}${state.revisions.length ? ` and ${state.revisions.length} earlier revision${state.revisions.length === 1 ? '' : 's'}` : ''} stay exactly as they are. Only the failing step and what follows it get rewritten.</p></div>
+      <div class="fail-expect"><span>${icon('shieldLock', 12)}</span><p>Your ${completedCount < 0 ? 0 : completedCount} completed step${completedCount === 1 ? '' : 's'}${state.revisions.length ? ` and ${state.revisions.length} earlier revision${state.revisions.length === 1 ? '' : 's'}` : ''} stay exactly as they are. Only the failing step and what follows it get rewritten.</p></div>
       ${state.failure.error ? `<div class="error-banner" role="alert">${icon('warning', 15)}<span>${safe(state.failure.error)}</span></div>` : ''}
-      <div class="modal-foot"><button type="button" class="secondary-button" data-action="close-modal">Cancel</button><button class="install-button" type="submit" ${loading ? 'disabled' : ''}>${loading ? `${icon('refresh', 14, 'spinner')} Rebuilding the path` : `${icon('spark', 14)} Rebuild this path`}</button></div>
+      <div class="modal-foot"><button type="button" class="secondary-button" data-action="close-modal">Cancel</button><button class="install-button" type="submit" ${loading ? 'disabled' : ''}>${loading ? `${icon('loader', 14, 'spinner')} Rebuilding the path` : `${icon('sparkles', 14)} Rebuild this path`}</button></div>
     </form>
   </section></div>`;
 }
@@ -1520,12 +1582,8 @@ async function submitRecovery(event) {
       completedSteps: steps.slice(0, Math.max(0, index)),
       remainingSteps: steps.slice(Math.max(0, index)),
       guide: { requirements: state.guide?.requirements || [], steps: state.guide?.steps || [], failureScan: state.guide?.failureScan },
-      config: hasAiConfig() ? { ...state.settings } : null,
     };
-    const response = await fetch('/api/recover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) throw new Error(payload.error || 'The path could not be rebuilt.');
-    const recovery = payload.recovery;
+    const recovery = await generateAI('recover', body);
     if (!state.guide.originalSteps) state.guide.originalSteps = state.guide.steps.map((entry) => ({ ...entry }));
     const previous = state.guide.steps;
     const revised = applyRevision(previous, recovery, failedStep?.id);
@@ -1588,13 +1646,13 @@ function contractPanel() {
       ${section('Exact versions expected', contract.expects?.length ? `<ul class="contract-list">${contract.expects.map((entry) => `<li><div><strong>${esc(entry.name)}</strong><code>${esc(entry.required)}</code></div><span class="from">${esc(entry.detectedFrom)}</span><em class="conf-${entry.confidence}">${esc(entry.confidence)}</em></li>`).join('')}</ul>` : '<p class="contract-none">Nothing is pinned by the project itself — see the gap note below.</p>')}
       ${section('What gets installed', contract.installs?.length ? `<ul class="contract-list">${contract.installs.map((entry) => `<li><div><strong>${esc(entry.what)}</strong><span>${esc(entry.detail)}</span></div><em class="scope">${esc(entry.kind)}</em></li>`).join('')}</ul>` : '<p class="contract-none">No manifest was readable, so nothing could be listed.</p>')}
       ${section('Permissions this needs', `<ul class="contract-list">${(contract.permissions || []).map((entry) => `<li><div><strong>${esc(entry.capability)}</strong><span>${esc(entry.why)}</span></div><em class="risk tone-${riskTone[entry.risk] || 'mint'}">${esc(entry.risk)}</em></li>`).join('')}</ul>`)}
-      ${section('What “working” looks like', `<p class="contract-state">${esc(contract.workingState)}</p>${contract.verification?.command ? `<div class="command-block verify-block"><button class="copy-mini" data-copy="${esc(contract.verification.command)}" aria-label="Copy verification command" title="Copy verification">${icon('copy', 13)}<span>Copy</span></button>${esc(contract.verification.command)}</div><p class="expect-line">${icon('check', 12)}${esc(contract.verification.expect)}</p>` : ''}`)}
+      ${section('What “working” looks like', `<p class="contract-state">${esc(contract.workingState)}</p>${contract.verification?.command ? `<div class="command-block verify-block">${icon('check', 13, 'verify-icon')}<button class="copy-mini" data-copy="${esc(contract.verification.command)}" aria-label="Copy verification command" title="Copy verification">${icon('copy', 13)}<span>Copy</span></button>${esc(contract.verification.command)}</div><p class="expect-line">${icon('check', 12)}${esc(contract.verification.expect)}</p>` : ''}`)}
     </div>
     ${contract.gaps?.length ? `<div class="contract-gaps"><h4>${icon('info', 13)} What this contract could not determine</h4><ul>${contract.gaps.map((gap) => `<li><strong>${esc(gap.field)}</strong> — ${esc(gap.reason)}</li>`).join('')}</ul></div>` : ''}
     <div class="contract-check">
       <h4>After you finish, confirm</h4>
       <ul>${items.map((item) => `<li class="${state.contractChecked[item.id] ? 'ticked' : ''}"><label><input type="checkbox" data-contract-id="${esc(item.id)}" ${state.contractChecked[item.id] ? 'checked' : ''} /><span>${esc(item.label)}</span></label>${item.hint ? `<code>${esc(item.hint)}</code>` : ''}</li>`).join('')}</ul>
-      ${items.length && ticked === items.length ? `<div class="contract-signed">${icon('check', 14)}<span>Contract satisfied — ${esc(contract.contractId)} verified on this machine.</span></div>` : ''}
+      ${items.length && ticked === items.length ? `<div class="contract-signed">${icon('checkCircle', 14)}<span>Contract satisfied — ${esc(contract.contractId)} verified on this machine.</span></div>` : ''}
     </div>
     <div class="contract-sign">
       <div class="sign-block"><span>sealed by</span><strong>${esc(contract.signature.by)}</strong><em>${esc(contract.signature.method)}</em></div>
@@ -1614,6 +1672,7 @@ function closeModal() {
   // Clean up any focus trap from the outgoing modal.
   const oldModal = root.querySelector('.modal[aria-modal="true"]');
   if (oldModal?._trapHandler) { document.removeEventListener('keydown', oldModal._trapHandler); oldModal._trapHandler = null; }
+  if (state.modal === 'settings' && state.ai.busy === 'connect') aiService.cancelFreeAiConnection();
   state.modal = null;
   render();
   if (state.lastFocusId) {
@@ -1646,10 +1705,10 @@ function mobileBottomNav() {
   const isAnalysis = state.mode === 'analysis' && state.guide;
   const items = [
     { id: 'nav-route', label: 'Route', icon: 'route', action: 'scroll-path', show: isAnalysis },
-    { id: 'nav-graph', label: 'Graph', icon: 'grid', action: 'scroll-graph', show: isAnalysis },
+    { id: 'nav-graph', label: 'Graph', icon: 'graph', action: 'scroll-graph', show: isAnalysis },
     { id: 'nav-contract', label: 'Contract', icon: 'shield', action: 'scroll-contract', show: isAnalysis },
-    { id: 'nav-palette', label: 'Menu', icon: 'search', action: 'palette', show: true },
-    { id: 'nav-settings', label: 'AI', icon: 'settings', action: 'settings', show: true },
+    { id: 'nav-palette', label: 'Menu', icon: 'command', action: 'palette', show: true },
+    { id: 'nav-settings', label: 'AI', icon: 'aiSettings', action: 'settings', show: true },
   ];
   const visible = items.filter((item) => item.show);
   return `<nav class="mobile-nav" aria-label="Mobile sections">${visible.map((item) => `<button class="mobile-nav-item" data-action="${item.action}" aria-label="${item.label}">${icon(item.icon, 18)}<span>${item.label}</span></button>`).join('')}</nav>`;
@@ -1663,20 +1722,20 @@ function paletteActions() {
   const analysis = state.mode === 'analysis' && state.guide;
   const scroll = (id) => () => { closeModal(); document.querySelector(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   const actions = [
-    { id: 'new-analysis', label: 'Start a new analysis', icon: 'plus', group: 'Actions', run: () => { closeModal(); newAnalysis(); } },
+    { id: 'new-analysis', label: 'Start a new analysis', icon: 'add', group: 'Actions', run: () => { closeModal(); newAnalysis(); } },
   ];
   if (analysis) {
     actions.push(
       { id: 'go-path', label: 'Go to installation steps', icon: 'route', group: 'Sections', hint: '1', run: scroll('#route-path') },
-      { id: 'go-failures', label: 'Go to failure evidence', icon: 'warning', group: 'Sections', hint: '2', run: scroll('#route-failures') },
-      { id: 'go-graph', label: 'Go to path graph', icon: 'grid', group: 'Sections', hint: '3', run: scroll('#route-graph') },
+      { id: 'go-failures', label: 'Go to failure evidence', icon: 'bug', group: 'Sections', hint: '2', run: scroll('#route-failures') },
+      { id: 'go-graph', label: 'Go to path graph', icon: 'graph', group: 'Sections', hint: '3', run: scroll('#route-graph') },
       { id: 'go-contract', label: 'Go to install contract', icon: 'shield', group: 'Sections', hint: '4', run: scroll('#route-contract') },
       { id: 'go-evidence', label: 'Go to files and evidence', icon: 'book', group: 'Sections', hint: '5', run: scroll('#route-evidence') },
       { id: 'install', label: 'Generate install script', icon: 'terminal', group: 'Actions', run: () => { closeModal(); state.lastFocusId = 'install'; state.modal = 'install'; render(); } },
     );
   }
   actions.push(
-    { id: 'settings', label: 'AI provider settings', icon: 'settings', group: 'Actions', run: () => { closeModal(); state.lastFocusId = 'settings'; state.modal = 'settings'; render(); setTimeout(() => document.querySelector('#base-url')?.focus(), 30); } },
+    { id: 'settings', label: 'AI provider settings', icon: 'aiSettings', group: 'Actions', run: () => { closeModal(); openAiSettings(); } },
     { id: 'theme', label: state.theme === 'light' ? 'Switch to dark mode' : 'Switch to daylight mode', icon: state.theme === 'light' ? 'moon' : 'sun', group: 'Actions', run: () => {
       state.theme = state.theme === 'light' ? 'dark' : 'light';
       try { localStorage.setItem('git-up-theme', state.theme); } catch { /* ignore */ }
@@ -1686,7 +1745,7 @@ function paletteActions() {
   const recent = state.history.slice(0, 4).map((entry) => ({
     id: `history-${entry.id}`,
     label: displayName(entry),
-    icon: 'clock',
+    icon: 'history',
     group: 'Recent repositories',
     run: () => { closeModal(); restoreHistory(entry.id); },
   }));
@@ -1850,81 +1909,15 @@ async function analyze() {
   };
 
   try {
-    const config = hasAiConfig() ? { ...state.settings } : null;
-    const body = JSON.stringify({ repoUrl: state.repoUrl, expertise: state.expertise, config });
-
-    let guide = null;
-    try {
-      guide = await analyzeWithStream(body);
-    } catch {
-      guide = await analyzeWithPoll(body);
-    }
-
+    const guide = await generateAI('analyze', { repoUrl: state.repoUrl, expertise: state.expertise }, (progress) => {
+      state.progress = progress;
+      render();
+    });
     if (!guide) throw new Error('The repository could not be analyzed.');
     finish(guide);
   } catch (error) {
     fail(error);
   }
-}
-
-async function analyzeWithStream(body) {
-  const response = await fetch('/api/analyze-stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
-  if (!response.ok) throw new Error(`Stream endpoint returned ${response.status}`);
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const raw = line.slice(6).trim();
-      if (!raw) continue;
-      try {
-        const msg = JSON.parse(raw);
-        if (msg.phase === 'error') throw new Error(msg.error || 'Stream reported an error.');
-        if (msg.phase === 'result') {
-          state.progress = { phase: 'done', label: msg.label || 'Analysis complete', percent: 100, error: '' };
-          render();
-          return msg.guide;
-        }
-        state.progress = { phase: msg.phase, label: msg.label || '', percent: Number(msg.percent) || 0, error: '' };
-        render();
-      } catch (parseError) {
-        if (parseError instanceof SyntaxError) continue;
-        throw parseError;
-      }
-    }
-  }
-  throw new Error('Stream ended without a result.');
-}
-
-async function analyzeWithPoll(body) {
-  const fallbackPhases = [
-    { phase: 'repository', label: 'Reading repository metadata…', percent: 10 },
-    { phase: 'files', label: 'Scanning setup files…', percent: 25 },
-    { phase: 'ai', label: hasAiConfig() ? 'Reviewing with AI…' : 'Building local guide…', percent: 45 },
-    { phase: 'failures', label: 'Checking failure history…', percent: 55 },
-    { phase: 'health', label: 'Computing health score…', percent: 65 },
-    { phase: 'path', label: 'Composing install path…', percent: 78 },
-    { phase: 'contract', label: 'Building install contract…', percent: 90 },
-    { phase: 'tuning', label: 'Tuning for your level…', percent: 95 },
-  ];
-  for (const p of fallbackPhases) {
-    state.progress = p;
-    render();
-    await new Promise((r) => setTimeout(r, 350));
-  }
-  const response = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
-  const payload = await response.json();
-  if (!response.ok || !payload.ok) throw new Error(payload.error || 'The repository could not be analyzed.');
-  state.progress = { phase: 'done', label: 'Analysis complete', percent: 100, error: '' };
-  render();
-  return payload.guide;
 }
 
 function readSettingsFromForm() {
@@ -1939,31 +1932,174 @@ async function fetchModels() {
   const status = document.querySelector('#settings-status');
   const values = readSettingsFromForm();
   if (!values.baseUrl || !values.apiKey) { if (status) { status.className = 'settings-status bad'; status.textContent = 'Add a base URL and API key first.'; } return; }
-  if (button) { button.disabled = true; button.innerHTML = `${icon('refresh', 13, 'spinner')} Fetching…`; }
+  if (button) { button.disabled = true; button.innerHTML = `${icon('loader', 13, 'spinner')} Fetching…`; }
   if (status) { status.className = 'settings-status'; status.textContent = 'Contacting your provider…'; }
   try {
-    const response = await fetch('/api/models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ baseUrl: values.baseUrl, apiKey: values.apiKey }) });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) throw new Error(payload.error || 'Could not fetch models.');
-    state.modelOptions = payload.models || [];
+    state.modelOptions = await aiService.fetchCustomModels({ baseUrl: values.baseUrl, apiKey: values.apiKey });
     state.settings = { ...state.settings, ...values };
+    state.ai.customError = false;
     render();
     const newStatus = document.querySelector('#settings-status');
     if (newStatus) { newStatus.className = 'settings-status good'; newStatus.textContent = `${state.modelOptions.length} model${state.modelOptions.length === 1 ? '' : 's'} available. Select one below.`; }
   } catch (error) {
-    if (status) { status.className = 'settings-status bad'; status.textContent = error.message || 'Could not fetch models.'; }
-    if (button) { button.disabled = false; button.innerHTML = `${icon('refresh', 13)} Fetch models`; }
+    state.settings = { ...state.settings, ...values };
+    state.ai.customError = true;
+    render();
+    const newStatus = document.querySelector('#settings-status');
+    if (newStatus) { newStatus.className = 'settings-status bad'; newStatus.textContent = error.message || 'Could not fetch models.'; }
   }
 }
+
 function saveSettings(event) {
   event.preventDefault();
   const values = readSettingsFromForm();
   state.settings = values;
-  sessionStorage.setItem('git-up-api-key', values.apiKey);
-  localStorage.setItem('git-up-settings', JSON.stringify({ baseUrl: values.baseUrl, endpoint: values.endpoint, model: values.model, modelOptions: state.modelOptions }));
+  state.ai.activeProvider = AI_PROVIDER.CUSTOM;
+  state.ai.customError = false;
+  try { sessionStorage.setItem('git-up-api-key', values.apiKey); } catch { /* session-only storage may be disabled */ }
+  persistAiSettings();
   closeModal();
-  showToast(hasAiConfig() ? 'AI provider connected for this session.' : 'Provider configuration saved. Local scan remains available.');
+  showToast(hasCustomAiConfig() ? 'Custom API connected for this session.' : 'Provider configuration saved. Local scan remains available.');
 }
+
+function captureCustomSettings() {
+  if (!document.querySelector('#base-url')) return;
+  const values = readSettingsFromForm();
+  state.settings = { ...state.settings, ...values };
+  try { sessionStorage.setItem('git-up-api-key', values.apiKey); } catch { /* ignore */ }
+}
+
+function switchAiProvider(nextProvider) {
+  const next = normaliseAiProvider(nextProvider);
+  if (state.ai.activeProvider === AI_PROVIDER.CUSTOM) captureCustomSettings();
+  if (next !== AI_PROVIDER.POLLINATIONS && state.ai.busy === 'connect') aiService.cancelFreeAiConnection();
+  state.ai.activeProvider = next;
+  state.ai.authorization = null;
+  persistAiSettings();
+  render();
+  if (state.modal === 'settings') setTimeout(() => document.querySelector(`[name="ai-provider"][value="${next}"]`)?.focus(), 0);
+  if (next === AI_PROVIDER.POLLINATIONS
+    && state.ai.busy !== 'connect'
+    && state.ai.pollinationsStatus !== AI_CONNECTION.POLLINATIONS_ERROR) refreshFreeAiConnection();
+}
+
+async function refreshFreeAiConnection() {
+  try {
+    const connected = await aiService.isFreeAiConnected();
+    state.ai.pollinationsStatus = connected ? AI_CONNECTION.POLLINATIONS_CONNECTED : AI_CONNECTION.POLLINATIONS_AUTH_REQUIRED;
+    if (connected) state.ai.message = '';
+  } catch (error) {
+    state.ai.pollinationsStatus = FREE_AI_AUTH_REQUIRED_CODES.has(error?.code)
+      ? AI_CONNECTION.POLLINATIONS_AUTH_REQUIRED
+      : AI_CONNECTION.POLLINATIONS_ERROR;
+    state.ai.message = aiService.freeAiMessage(error);
+    console.error('Git-Up Free AI status check failed', { code: error?.code || 'status-failed', type: error?.name || 'Error' });
+  }
+  render();
+}
+
+async function connectFreeAi() {
+  if (state.ai.busy) return;
+  const verifyAfterConnect = state.ai.pollinationsStatus === AI_CONNECTION.POLLINATIONS_ERROR;
+  state.ai.busy = 'connect';
+  state.ai.pollinationsStatus = AI_CONNECTION.POLLINATIONS_CONNECTING;
+  state.ai.message = '';
+  state.ai.authorization = null;
+  render();
+  try {
+    await aiService.connectFreeAi({
+      onAuthorization: (authorization) => {
+        if (state.ai.activeProvider !== AI_PROVIDER.POLLINATIONS || state.ai.busy !== 'connect') {
+          aiService.cancelFreeAiConnection();
+          return;
+        }
+        state.ai.authorization = authorization;
+        render();
+        setTimeout(() => document.querySelector('a[href^="https://enter.pollinations.ai/"]')?.focus(), 0);
+      },
+    });
+    if (verifyAfterConnect) await aiService.testFreeAi();
+    state.ai.pollinationsStatus = AI_CONNECTION.POLLINATIONS_CONNECTED;
+    state.ai.message = 'Free AI Connected — you’re ready to use Git-Up’s AI features.';
+    showToast('Free AI connected through Pollinations.');
+  } catch (error) {
+    state.ai.pollinationsStatus = FREE_AI_AUTH_REQUIRED_CODES.has(error?.code)
+      ? AI_CONNECTION.POLLINATIONS_AUTH_REQUIRED
+      : AI_CONNECTION.POLLINATIONS_ERROR;
+    state.ai.message = aiService.freeAiMessage(error);
+    console.error('Git-Up Free AI connection failed', { code: error?.code || 'connect-failed', type: error?.name || 'Error' });
+  } finally {
+    state.ai.busy = '';
+    state.ai.authorization = null;
+    render();
+  }
+}
+
+function cancelFreeAiConnect() {
+  if (state.ai.busy !== 'connect') return;
+  state.ai.message = 'Cancelling Pollinations authorization…';
+  aiService.cancelFreeAiConnection();
+  render();
+}
+
+async function testFreeAi() {
+  if (state.ai.busy) return;
+  state.ai.busy = 'test';
+  state.ai.message = '';
+  render();
+  try {
+    await aiService.testFreeAi();
+    state.ai.pollinationsStatus = AI_CONNECTION.POLLINATIONS_CONNECTED;
+    state.ai.message = 'Free AI is working. Pollinations completed the test request.';
+  } catch (error) {
+    state.ai.pollinationsStatus = FREE_AI_AUTH_REQUIRED_CODES.has(error?.code)
+      ? AI_CONNECTION.POLLINATIONS_AUTH_REQUIRED
+      : AI_CONNECTION.POLLINATIONS_ERROR;
+    state.ai.message = aiService.freeAiMessage(error);
+    console.error('Git-Up Free AI test failed', { code: error?.code || 'test-failed', type: error?.name || 'Error' });
+  } finally {
+    state.ai.busy = '';
+    render();
+  }
+}
+
+async function disconnectFreeAi() {
+  if (state.ai.busy) return;
+  const confirmed = typeof window.confirm !== 'function' || window.confirm('Disconnect Free AI? Your Custom API configuration will remain unchanged.');
+  if (!confirmed) return;
+  state.ai.busy = 'disconnect';
+  state.ai.message = 'Disconnecting Free AI…';
+  render();
+  try {
+    await aiService.disconnectFreeAi();
+    state.ai.pollinationsStatus = AI_CONNECTION.POLLINATIONS_AUTH_REQUIRED;
+    state.ai.message = 'Pollinations authorization removed from this session. Your Custom API configuration is still available.';
+    showToast('Pollinations authorization removed.');
+  } catch (error) {
+    state.ai.pollinationsStatus = AI_CONNECTION.POLLINATIONS_ERROR;
+    state.ai.message = aiService.freeAiMessage(error);
+    console.error('Git-Up Free AI disconnect failed', { code: error?.code || 'disconnect-failed', type: error?.name || 'Error' });
+  } finally {
+    state.ai.busy = '';
+    render();
+  }
+}
+
+function focusSettingsPrimary() {
+  const selector = state.ai.activeProvider === AI_PROVIDER.POLLINATIONS ? '[data-action="connect-free-ai"], [data-action="test-free-ai"]' : '#base-url';
+  setTimeout(() => document.querySelector(selector)?.focus(), 30);
+}
+
+function openAiSettings() {
+  state.lastFocusId = 'settings';
+  state.modal = 'settings';
+  render();
+  focusSettingsPrimary();
+  if (state.ai.activeProvider === AI_PROVIDER.POLLINATIONS
+    && state.ai.busy !== 'connect'
+    && state.ai.pollinationsStatus !== AI_CONNECTION.POLLINATIONS_ERROR) refreshFreeAiConnection();
+}
+
 async function copyText(text) {
   try { await navigator.clipboard.writeText(text); showToast('Copied to clipboard.'); }
   catch { showToast('Copy was blocked by the browser. Select the command manually.', 'error'); }
@@ -1991,8 +2127,15 @@ function bindEvents() {
   document.querySelector('#repo-form')?.addEventListener('submit', (event) => { event.preventDefault(); analyze(); });
   document.querySelector('#repo-input')?.addEventListener('input', (event) => { state.repoUrl = event.target.value; });
   document.querySelector('#settings-form')?.addEventListener('submit', saveSettings);
+  document.querySelectorAll('[name="ai-provider"]').forEach((el) => el.addEventListener('change', () => { if (el.checked) switchAiProvider(el.value); }));
+  document.querySelectorAll('[data-action="use-free-ai"]').forEach((el) => el.addEventListener('click', () => switchAiProvider(AI_PROVIDER.POLLINATIONS)));
+  document.querySelectorAll('[data-action="use-custom-ai"]').forEach((el) => el.addEventListener('click', () => switchAiProvider(AI_PROVIDER.CUSTOM)));
+  document.querySelectorAll('[data-action="connect-free-ai"]').forEach((el) => el.addEventListener('click', connectFreeAi));
+  document.querySelectorAll('[data-action="cancel-free-ai-connect"]').forEach((el) => el.addEventListener('click', cancelFreeAiConnect));
+  document.querySelectorAll('[data-action="test-free-ai"]').forEach((el) => el.addEventListener('click', testFreeAi));
+  document.querySelectorAll('[data-action="disconnect-free-ai"]').forEach((el) => el.addEventListener('click', disconnectFreeAi));
   document.querySelectorAll('[data-action="new-analysis"]').forEach((el) => el.addEventListener('click', (e) => { e.preventDefault(); newAnalysis(); }));
-  document.querySelectorAll('[data-action="settings"]').forEach((el) => el.addEventListener('click', () => { state.lastFocusId = 'settings'; state.modal = 'settings'; render(); setTimeout(() => document.querySelector('#base-url')?.focus(), 30); }));
+  document.querySelectorAll('[data-action="settings"]').forEach((el) => el.addEventListener('click', openAiSettings));
   document.querySelectorAll('[data-action="theme"]').forEach((el) => el.addEventListener('click', () => {
     state.theme = state.theme === 'light' ? 'dark' : 'light';
     try { localStorage.setItem('git-up-theme', state.theme); } catch { /* ignore */ }
@@ -2139,8 +2282,7 @@ function bindEvents() {
       if (action) action.run();
     }
   });
-  // Magic UI ports: cursor spotlight on cards, count-up tickers, scroll reveal (re-bind each render).
-  bindSpotlight(document);
+  // Supporting value ticker and restrained reveal hooks re-bind after each render.
   bindTickers(document);
   bindReveals(document);
   // Workspace particle field (particles.js engine): initializes exactly once
@@ -2167,7 +2309,7 @@ function saveRename(id) {
 
 document.addEventListener('keydown', (event) => {
   if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k') { event.preventDefault(); togglePalette(); }
-  if ((event.metaKey || event.ctrlKey) && event.key === ',') { event.preventDefault(); state.lastFocusId = 'settings'; state.modal = 'settings'; render(); setTimeout(() => document.querySelector('#base-url')?.focus(), 30); }
+  if ((event.metaKey || event.ctrlKey) && event.key === ',') { event.preventDefault(); openAiSettings(); }
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && state.mode !== 'loading') { event.preventDefault(); analyze(); }
   if (event.key === 'Escape' && state.modal) { closeModal(); }
   else if (event.key === 'Escape' && state.openMenuId) { state.openMenuId = null; render(); }
@@ -2201,7 +2343,8 @@ resumeActiveSession();
 loadOreoPrefs();
 
 render();
+if (state.ai.activeProvider === AI_PROVIDER.POLLINATIONS) refreshFreeAiConnection();
 
 // Named exports exist only so tests/render.test.mjs can drive the real client
 // module in Node. The browser loads this file as a module either way.
-export { state, render, activePath, installScript, setPathOption, setExpertise, emptySession, sessionSnapshot, hydrateSession, oreoMarkdown, oreoHtml, toggleOreo, sendOreoMessage, setOreoMuted, setOreoHidden, loadOreoPrefs, saveOreoPrefs, oreoClampPos, oreoShouldSuppressClick, oreoSpringStep, oreoPanelPositionStyle, OREO_NAME, OREO_TIPS };
+export { state, render, activePath, installScript, setPathOption, setExpertise, emptySession, sessionSnapshot, hydrateSession, oreoMarkdown, oreoHtml, toggleOreo, sendOreoMessage, setOreoMuted, setOreoHidden, loadOreoPrefs, saveOreoPrefs, oreoClampPos, oreoShouldSuppressClick, oreoSpringStep, oreoPanelPositionStyle, switchAiProvider, aiConnection, hasAiConfig, hasCustomAiConfig, persistAiSettings, refreshFreeAiConnection, connectFreeAi, cancelFreeAiConnect, testFreeAi, disconnectFreeAi, OREO_NAME, OREO_TIPS };

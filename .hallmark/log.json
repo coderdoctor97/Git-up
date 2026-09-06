@@ -1,0 +1,76 @@
+[
+  {
+    "date": "2026-09-05",
+    "macrostructure": "Route workbench (preserved)",
+    "theme": "Existing Git-Up route ledger",
+    "enrichment": "none — function carries the app",
+    "brief": "Conservative anti-slop audit cleanup with every product feature preserved",
+    "scope": "app",
+    "mode": "audit-cleanup"
+  },
+  {
+    "date": "2026-09-05",
+    "macrostructure": "Asymmetric route ledger workbench",
+    "theme": "Existing Git-Up route ledger",
+    "enrichment": "quiet repository dot field plus protected contribution and Oreo systems",
+    "variation_knobs": [
+      "split entry composition instead of single-column hero",
+      "ruled route sequence instead of rounded stacked cards",
+      "wide path ledger plus narrow evidence rail",
+      "square utility geometry and low-depth surfaces"
+    ],
+    "brief": "First strong attempt; rejected because too much of the original dark-shell silhouette remained",
+    "scope": "app",
+    "mode": "redesign-in-place"
+  },
+  {
+    "date": "2026-09-05",
+    "macrostructure": "Inverted field manual + right context rail",
+    "theme": "Existing Git-Up route ledger with neutral manual inversion",
+    "enrichment": "theme-inverted repository sheet; protected contribution and Oreo systems remain",
+    "variation_knobs": [
+      "workspace context moved from left rail to sticky right rail",
+      "neutral light sheet on dark theme and dark sheet on light theme",
+      "full-width manual header band in analysis state",
+      "open ruled ledger sections instead of contained dashboard cards",
+      "mobile first screen inherits the same inversion rather than reverting to the old stack"
+    ],
+    "brief": "Unmistakable visual redesign after the prior attempt still looked too similar; every feature, route, component, provider, content item, brand asset, icon, and Oreo behavior remains",
+    "scope": "app",
+    "mode": "redesign-in-place"
+  },
+  {
+    "date": "2026-09-05",
+    "macrostructure": "Inverted field manual + right context rail (preserved)",
+    "theme": "Existing Git-Up route ledger with neutral manual inversion",
+    "enrichment": "production refinement only; no replacement visual world",
+    "variation_knobs": [
+      "readable 220px context rail from 721–1100px instead of the clipped intermediate rail",
+      "existing mobile navigation takes ownership at 720px and below",
+      "repository identity and actions stack through 1399px",
+      "display tracking conforms to the -0.04em craft floor",
+      "recoverable errors and modal/Oreo layering no longer obscure critical state",
+      "layout-property transitions and thick side-tab accents are removed"
+    ],
+    "brief": "Impeccable polish of the accepted field-manual redesign; repaired responsive, typography, state, interaction, and layering defects without changing content, behavior, providers, logo, icons, or Oreo functionality",
+    "scope": "app presentation and regression gates",
+    "mode": "impeccable-polish"
+  },
+  {
+    "date": "2026-09-05",
+    "macrostructure": "Inverted field manual + right context rail (preserved)",
+    "theme": "Existing Git-Up route ledger with contribution-square activity",
+    "enrichment": "calm animated GitHub-style square field, editorial type rhythm, and selective tonal grouping",
+    "variation_knobs": [
+      "three-line hero statement at common desktop and 375px mobile widths",
+      "seven-row topbar contribution canvas plus slow viewport-bound square particles",
+      "short opacity/translate entrances with once-only reveal sealing",
+      "major chapter borders removed in favor of whitespace and focused surfaces",
+      "one highlighted middle route stop instead of three equally contained feature tiles",
+      "native smooth anchor motion and restrained 1px primary-action feedback"
+    ],
+    "brief": "Dynamic visual refinement of the accepted field manual; no DOM, feature, workflow, content, provider, state, form, API, or event-handler change",
+    "scope": "presentation modules and focused visual regression gates",
+    "mode": "taste-preserve-refinement"
+  }
+]

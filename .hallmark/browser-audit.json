@@ -1,0 +1,223 @@
+{
+  "date": "2026-09-05",
+  "engine": "Chromium 153 via Playwright 1.63.0",
+  "checks": [
+    {
+      "label": "empty/dark/320",
+      "viewport": 320,
+      "rootScrollWidth": 320,
+      "bodyScrollWidth": 320,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": "anywhere",
+      "theme": "dark"
+    },
+    {
+      "label": "empty/dark/375",
+      "viewport": 375,
+      "rootScrollWidth": 375,
+      "bodyScrollWidth": 375,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": "anywhere",
+      "theme": "dark"
+    },
+    {
+      "label": "empty/dark/414",
+      "viewport": 414,
+      "rootScrollWidth": 414,
+      "bodyScrollWidth": 414,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": "anywhere",
+      "theme": "dark"
+    },
+    {
+      "label": "empty/dark/768",
+      "viewport": 768,
+      "rootScrollWidth": 768,
+      "bodyScrollWidth": 768,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": "anywhere",
+      "theme": "dark"
+    },
+    {
+      "label": "empty/dark/1280",
+      "viewport": 1280,
+      "rootScrollWidth": 1280,
+      "bodyScrollWidth": 1280,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": "anywhere",
+      "theme": "dark"
+    },
+    {
+      "label": "empty/dark/1440",
+      "viewport": 1440,
+      "rootScrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": "anywhere",
+      "theme": "dark"
+    },
+    {
+      "label": "empty/light/320",
+      "viewport": 320,
+      "rootScrollWidth": 320,
+      "bodyScrollWidth": 320,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": "anywhere",
+      "theme": "light"
+    },
+    {
+      "label": "empty/light/375",
+      "viewport": 375,
+      "rootScrollWidth": 375,
+      "bodyScrollWidth": 375,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": "anywhere",
+      "theme": "light"
+    },
+    {
+      "label": "empty/light/414",
+      "viewport": 414,
+      "rootScrollWidth": 414,
+      "bodyScrollWidth": 414,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": "anywhere",
+      "theme": "light"
+    },
+    {
+      "label": "empty/light/768",
+      "viewport": 768,
+      "rootScrollWidth": 768,
+      "bodyScrollWidth": 768,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": "anywhere",
+      "theme": "light"
+    },
+    {
+      "label": "empty/light/1280",
+      "viewport": 1280,
+      "rootScrollWidth": 1280,
+      "bodyScrollWidth": 1280,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": "anywhere",
+      "theme": "light"
+    },
+    {
+      "label": "empty/light/1440",
+      "viewport": 1440,
+      "rootScrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": "anywhere",
+      "theme": "light"
+    },
+    {
+      "label": "analysis/dark/320",
+      "viewport": 320,
+      "rootScrollWidth": 320,
+      "bodyScrollWidth": 320,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": null,
+      "theme": "dark"
+    },
+    {
+      "label": "analysis/dark/375",
+      "viewport": 375,
+      "rootScrollWidth": 375,
+      "bodyScrollWidth": 375,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": null,
+      "theme": "dark"
+    },
+    {
+      "label": "analysis/dark/414",
+      "viewport": 414,
+      "rootScrollWidth": 414,
+      "bodyScrollWidth": 414,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": null,
+      "theme": "dark"
+    },
+    {
+      "label": "analysis/dark/768",
+      "viewport": 768,
+      "rootScrollWidth": 768,
+      "bodyScrollWidth": 768,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": null,
+      "theme": "dark"
+    },
+    {
+      "label": "analysis/dark/1280",
+      "viewport": 1280,
+      "rootScrollWidth": 1280,
+      "bodyScrollWidth": 1280,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": null,
+      "theme": "dark"
+    },
+    {
+      "label": "analysis/dark/1440",
+      "viewport": 1440,
+      "rootScrollWidth": 1440,
+      "bodyScrollWidth": 1440,
+      "offenders": [],
+      "wrapped": [],
+      "h1Fits": true,
+      "h1Wrap": null,
+      "theme": "dark"
+    },
+    {
+      "label": "analysis/reduced/375",
+      "particles": "none",
+      "marquee": "none",
+      "revealOpacity": "1",
+      "revealTransition": "0s"
+    },
+    {
+      "label": "contrast/light-primary",
+      "ratio": 6.110961169887189,
+      "color": "rgb(255, 255, 255)",
+      "background": "rgb(9, 112, 77)"
+    }
+  ],
+  "design_pass": "field-manual inversion with Impeccable polish",
+  "summary": {
+    "viewport_state_checks": 20,
+    "result": "pass"
+  },
+  "companion": ".hallmark/polish-audit.json covers breakpoint boundaries, long content, error, modal, and disabled states"
+}

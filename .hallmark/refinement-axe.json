@@ -1,0 +1,66 @@
+{
+  "date": "2026-09-05",
+  "engine": "Chromium via Playwright + axe-core",
+  "runs": [
+    {
+      "label": "empty/dark/320",
+      "violations": []
+    },
+    {
+      "label": "empty/dark/1280",
+      "violations": []
+    },
+    {
+      "label": "analysis/dark/320",
+      "violations": []
+    },
+    {
+      "label": "analysis/dark/1280",
+      "violations": []
+    },
+    {
+      "label": "empty/light/320",
+      "violations": []
+    },
+    {
+      "label": "empty/light/1280",
+      "violations": []
+    },
+    {
+      "label": "analysis/light/320",
+      "violations": []
+    },
+    {
+      "label": "analysis/light/1280",
+      "violations": []
+    },
+    {
+      "label": "error/dark/375",
+      "violations": []
+    },
+    {
+      "label": "loading-disabled/dark/375",
+      "violations": []
+    },
+    {
+      "label": "settings/dark/1280",
+      "violations": []
+    },
+    {
+      "label": "settings/light/375",
+      "violations": []
+    },
+    {
+      "label": "error/light/375",
+      "violations": []
+    },
+    {
+      "label": "loading-disabled/light/375",
+      "violations": []
+    }
+  ],
+  "summary": {
+    "runs": 14,
+    "violations": 0
+  }
+}

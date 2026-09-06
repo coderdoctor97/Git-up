@@ -21,10 +21,10 @@
 
 const CONFIG = {
   particles: {
-    // Reference: value 262 / value_area 2558.98. Kept the same density
-    // mechanism, lowered for a restrained field: ~60 desktop, ~18 mobile
-    // (count = area/1000 * value/value_area, scaled automatically).
-    number: { value: 70, density: { enable: true, value_area: 1000 } },
+    // Reference: value 262 / value_area 2558.98. Keep density scaling, with a
+    // modest count bump so the field reads as repository activity at wide
+    // sizes without turning long analysis pages into particle soup.
+    number: { value: 78, density: { enable: true, value_area: 1120 } },
     // Reference: solid neon green #12f200 (excluded). Git-Up palette: mint
     // accent plus muted sage tones that read on dark AND light themes.
     // The engine picks one entry per particle at random.
@@ -37,23 +37,25 @@ const CONFIG = {
       polygon: { nb_sides: 5 },
       image: { src: '', width: 100, height: 100 },
     },
-    // Reference: value 0.576, random, animated. Lowered and slowed.
+    // Reference: value 0.576, random, animated. Visible enough to read as
+    // contribution squares after the canvas layer's restrained CSS opacity.
     opacity: {
-      value: 0.35, random: true,
-      anim: { enable: true, speed: 1, opacity_min: 0.08, sync: false },
+      value: 0.46, random: true,
+      anim: { enable: true, speed: 0.72, opacity_min: 0.1, sync: false },
     },
     // Reference: value ~8 with an extreme size pulse (excluded as demo
-    // excess). Small, gently breathing nodes instead.
+    // excess). Crisp 1–3px repository-activity cells instead.
     size: {
-      value: 2.6, random: true,
-      anim: { enable: true, speed: 1.5, size_min: 0.8, sync: false },
+      value: 2.8, random: true,
+      anim: { enable: true, speed: 0.9, size_min: 0.9, sync: false },
     },
     // Reference: line_linked disabled — kept disabled. No web of lines.
     line_linked: { enable: false, distance: 150, color: '#7fe0b2', opacity: 0, width: 0 },
-    // Reference: slow random drift, bounce keeps density constant.
+    // Reference: slow random drift. The calmer speed suggests asynchronous
+    // repository activity rather than decorative snowfall.
     move: {
-      enable: true, speed: 1.5, direction: 'none', random: true,
-      straight: false, out_mode: 'bounce', bounce: false,
+      enable: true, speed: 0.58, direction: 'top-right', random: true,
+      straight: false, out_mode: 'out', bounce: false,
       attract: { enable: false, rotateX: 600, rotateY: 1200 },
     },
   },
@@ -63,7 +65,7 @@ const CONFIG = {
     // engine then tracks the cursor globally and repels workspace particles.
     detect_on: 'window',
     events: {
-      // Reference: hover repulse 200px (too aggressive — narrowed to 90px).
+      // Reference: hover repulse 200px (too aggressive — narrowed to 68px).
       onhover: { enable: true, mode: 'repulse' },
       // Reference: click "push" spawns particles (excluded — clicking must
       // never mutate anything near UI controls).
@@ -73,7 +75,7 @@ const CONFIG = {
     modes: {
       grab: { distance: 100, line_linked: { opacity: 1 } },
       bubble: { distance: 200, size: 40, duration: 2, opacity: 8, speed: 3 },
-      repulse: { distance: 90, duration: 0.4 },
+      repulse: { distance: 68, duration: 0.38 },
       push: { particles_nb: 2 },
       remove: { particles_nb: 2 },
     },

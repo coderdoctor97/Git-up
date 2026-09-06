@@ -1,0 +1,140 @@
+{
+  "date": "2026-09-05",
+  "skill_version": "4.0.0",
+  "targets": [
+    "public/styles.css",
+    "public/magic.css"
+  ],
+  "run_count": 1,
+  "exit_code": 2,
+  "initial_findings": [
+    {
+      "antipattern": "side-tab",
+      "name": "Side-tab accent border",
+      "description": "Thick colored border on one side of a card \u2014 the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+      "severity": "warning",
+      "category": "slop",
+      "file": "/home/user/Git-up/public/styles.css",
+      "line": 234,
+      "snippet": "border-left: 3px solid var(--route)"
+    },
+    {
+      "antipattern": "side-tab",
+      "name": "Side-tab accent border",
+      "description": "Thick colored border on one side of a card \u2014 the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+      "severity": "warning",
+      "category": "slop",
+      "file": "/home/user/Git-up/public/styles.css",
+      "line": 742,
+      "snippet": "border-left: 3px solid var(--route)"
+    },
+    {
+      "antipattern": "side-tab",
+      "name": "Side-tab accent border",
+      "description": "Thick colored border on one side of a card \u2014 the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+      "severity": "warning",
+      "category": "slop",
+      "file": "/home/user/Git-up/public/styles.css",
+      "line": 769,
+      "snippet": "border-left: 3px solid var(--route)"
+    },
+    {
+      "antipattern": "side-tab",
+      "name": "Side-tab accent border",
+      "description": "Thick colored border on one side of a card \u2014 the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+      "severity": "warning",
+      "category": "slop",
+      "file": "/home/user/Git-up/public/styles.css",
+      "line": 1198,
+      "snippet": "border-left: 3px solid var(--route)"
+    },
+    {
+      "antipattern": "layout-transition",
+      "name": "Layout property animation",
+      "description": "Animating width, height, padding, or margin causes layout thrash and janky performance. Use transform and opacity instead, or grid-template-rows for height animations.",
+      "severity": "warning",
+      "category": "quality",
+      "file": "/home/user/Git-up/public/styles.css",
+      "line": 241,
+      "snippet": "transition: width"
+    },
+    {
+      "antipattern": "layout-transition",
+      "name": "Layout property animation",
+      "description": "Animating width, height, padding, or margin causes layout thrash and janky performance. Use transform and opacity instead, or grid-template-rows for height animations.",
+      "severity": "warning",
+      "category": "quality",
+      "file": "/home/user/Git-up/public/styles.css",
+      "line": 429,
+      "snippet": "transition: width"
+    },
+    {
+      "antipattern": "layout-transition",
+      "name": "Layout property animation",
+      "description": "Animating width, height, padding, or margin causes layout thrash and janky performance. Use transform and opacity instead, or grid-template-rows for height animations.",
+      "severity": "warning",
+      "category": "quality",
+      "file": "/home/user/Git-up/public/styles.css",
+      "line": 663,
+      "snippet": "transition: width"
+    },
+    {
+      "antipattern": "side-tab",
+      "name": "Side-tab accent border",
+      "description": "Thick colored border on one side of a card \u2014 the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+      "severity": "warning",
+      "category": "slop",
+      "file": "/home/user/Git-up/public/magic.css",
+      "line": 520,
+      "snippet": "border-left: 8px solid var(--route)"
+    },
+    {
+      "antipattern": "border-accent-on-rounded",
+      "name": "Border accent on rounded element",
+      "description": "Thick accent border on a rounded card \u2014 the border clashes with the rounded corners. Remove the border or the border-radius.",
+      "severity": "warning",
+      "category": "slop",
+      "file": "/home/user/Git-up/public/magic.css",
+      "line": 657,
+      "snippet": "border-top: 8px solid"
+    },
+    {
+      "antipattern": "border-accent-on-rounded",
+      "name": "Border accent on rounded element",
+      "description": "Thick accent border on a rounded card \u2014 the border clashes with the rounded corners. Remove the border or the border-radius.",
+      "severity": "warning",
+      "category": "slop",
+      "file": "/home/user/Git-up/public/magic.css",
+      "line": 856,
+      "snippet": "border-top: 6px solid"
+    }
+  ],
+  "disposition": {
+    "remediated": [
+      {
+        "kind": "side-tab",
+        "count": 5,
+        "resolution": "Removed the four 3px side-tab accents and replaced the 8px analysis-console side accent with an established top rule."
+      },
+      {
+        "kind": "layout-transition",
+        "count": 3,
+        "resolution": "Removed all width transitions so state updates no longer animate layout properties."
+      }
+    ],
+    "intentional_exceptions": [
+      {
+        "kind": "border-accent-on-rounded",
+        "original_target": ".route-status",
+        "reason": "The element is explicitly square (border-radius: 0); its top rule is the field-manual section boundary, not a rounded-card accent."
+      },
+      {
+        "kind": "border-accent-on-rounded",
+        "original_target": ".mobile-nav",
+        "reason": "The dock is explicitly square and edge-aligned; its top rule connects mobile navigation to the established route/manual system."
+      }
+    ]
+  },
+  "post_remediation_verification": "Focused structural gates assert that layout-property transitions and thick route side borders remain absent. Per Impeccable guidance, the detector was not rerun.",
+  "result": "reviewed-and-resolved"
+}
